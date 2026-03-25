@@ -5,12 +5,13 @@ import telebot
 from config import TOKEN, DEBUG, ADMIN_IDS
 from handlers import bot
 from database import init_db
+import admin
 
 if __name__ == "__main__":
     # Initialize database
     if DEBUG:
         print("=" * 50)
-        print("🤖 Ardayda Bot Starting...")
+        print("🤖 Ardayda Bot Starting (Polling Mode)...")
         print("=" * 50)
     
     print("📂 Initializing database...")
@@ -29,6 +30,13 @@ if __name__ == "__main__":
         print(f"🆔 Bot ID: {bot_info.id}")
         print("=" * 50)
         print("🚀 Bot started polling...")
+        print("📝 Features:")
+        print("   📤 Upload PDFs")
+        print("   🔍 Search PDFs")
+        print("   👤 Profile with referral")
+        print("   🔗 Share PDFs")
+        print("   👑 Admin panel")
+        print("=" * 50)
         print("Press Ctrl+C to stop")
         print("=" * 50)
         

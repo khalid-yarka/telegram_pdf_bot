@@ -50,23 +50,37 @@ def webhook():
 @app.route('/', methods=['GET'])
 def index():
     """Health check endpoint"""
-    if DEBUG:
-        print("🏥 Health check requested")
-    return 'Bot is running', 200
+    return jsonify({
+        'status': 'ok',
+        'bot': 'Ardayda Bot',
+        'version': '2.0',
+        'message': 'Bot is running'
+    }), 200
 
 @app.route('/health', methods=['GET'])
 def health():
     """Health check for monitoring"""
+    try:
+        # Check database connection
+        from database import get_db
+        with get_db() as conn:
+            conn.execute('SELECT 1')
+            db_status = 'connected'
+    except Exception as e:
+        db_status = f'error: {e}'
+    
     return jsonify({
         'status': 'ok',
         'bot': 'Ardayda Bot',
         'token': TOKEN[:10] + '...',
-        'webhook_url': WEBHOOK_URL
+        'webhook_url': WEBHOOK_URL,
+        'database': db_status,
+        'debug': DEBUG
     }), 200
 
-@app.route('/setwebhook', methods=['GET'])
+@app.route('/setwebhook', methods=['GET', 'POST'])
 def set_webhook():
-    """Set webhook manually (for debugging)"""
+    """Set webhook manually"""
     try:
         webhook_url = WEBHOOK_URL
         bot.remove_webhook()
@@ -89,9 +103,9 @@ def set_webhook():
             'message': str(e)
         }), 500
 
-@app.route('/removewebhook', methods=['GET'])
+@app.route('/removewebhook', methods=['GET', 'POST'])
 def remove_webhook():
-    """Remove webhook manually (for debugging)"""
+    """Remove webhook manually"""
     try:
         bot.remove_webhook()
         
@@ -113,7 +127,7 @@ def remove_webhook():
 
 @app.route('/getwebhook', methods=['GET'])
 def get_webhook():
-    """Get current webhook info (for debugging)"""
+    """Get current webhook info"""
     try:
         webhook_info = bot.get_webhook_info()
         
@@ -132,6 +146,46 @@ def get_webhook():
     except Exception as e:
         if DEBUG:
             print(f"❌ Failed to get webhook info: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/stats', methods=['GET'])
+def stats():
+    """Get bot statistics (for monitoring)"""
+    try:
+        from database import get_stats
+        stats = get_stats()
+        
+        return jsonify({
+            'status': 'success',
+            'stats': stats
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/info', methods=['GET'])
+def info():
+    """Get bot info"""
+    try:
+        bot_info = bot.get_me()
+        
+        return jsonify({
+            'status': 'success',
+            'bot': {
+                'id': bot_info.id,
+                'username': bot_info.username,
+                'first_name': bot_info.first_name,
+                'is_bot': bot_info.is_bot
+            }
+        }), 200
+        
+    except Exception as e:
         return jsonify({
             'status': 'error',
             'message': str(e)

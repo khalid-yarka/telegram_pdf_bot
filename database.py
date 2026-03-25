@@ -5,7 +5,7 @@ import sqlite3
 import json
 import os
 from contextlib import contextmanager
-from config import DATABASE_PATH, DEBUG
+from config import DATABASE_PATH, DEBUG, TAGS
 from utils import get_current_time
 
 # Ensure instance directory exists
@@ -28,7 +28,7 @@ def init_db():
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Users table
+        # Users table with last_active field
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
@@ -38,14 +38,24 @@ def init_db():
                 school TEXT,
                 class TEXT,
                 join_date TIMESTAMP,
+                last_active TIMESTAMP,
                 is_banned BOOLEAN DEFAULT 0,
                 is_admin BOOLEAN DEFAULT 0,
                 referred_by INTEGER,
+                referral_notified BOOLEAN DEFAULT 0,
                 FOREIGN KEY (referred_by) REFERENCES users(user_id)
             )
         ''')
         
-        # PDFs table
+        # Check if last_active column exists, if not add it
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'last_active' not in columns:
+            cursor.execute('ALTER TABLE users ADD COLUMN last_active TIMESTAMP')
+            if DEBUG:
+                print("✅ Added last_active column to users table")
+        
+        # PDFs table - without file_size
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS pdfs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,30 +122,99 @@ def init_db():
             )
         ''')
         
+        # Requirements table (channels/groups users must join)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS requirements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL,
+                link TEXT NOT NULL,
+                description TEXT,
+                is_active BOOLEAN DEFAULT 1,
+                created_at TIMESTAMP,
+                created_by INTEGER,
+                FOREIGN KEY (created_by) REFERENCES users(user_id)
+            )
+        ''')
+        
+        # WhatsApp verification table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS whatsapp_verifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                requirement_id INTEGER,
+                verified_at TIMESTAMP,
+                verification_code TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                FOREIGN KEY (requirement_id) REFERENCES requirements(id)
+            )
+        ''')
+        
+        # Membership tracking table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS memberships (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                requirement_id INTEGER,
+                joined_at TIMESTAMP,
+                last_checked TIMESTAMP,
+                is_member BOOLEAN DEFAULT 0,
+                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                FOREIGN KEY (requirement_id) REFERENCES requirements(id)
+            )
+        ''')
+        
         if DEBUG:
             print("✅ Database tables created/verified successfully")
 
-# --- User functions ---
+# ==================== USER FUNCTIONS ====================
+
 def add_user(user_id, full_name, phone=None, region=None, school=None, class_name=None, referred_by=None):
+    """Add or update user, returns referred_by for notification"""
+    current_time = get_current_time()
+    
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
-            INSERT OR IGNORE INTO users 
-            (user_id, full_name, phone, region, school, class, join_date, is_banned, is_admin, referred_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
-        ''', (user_id, full_name, phone, region, school, class_name, get_current_time(), referred_by))
-        if phone or region or school or class_name:
+        
+        # Check if user exists
+        existing = cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
+        
+        if existing:
+            # Update existing user with last_active
             cursor.execute('''
                 UPDATE users SET
+                    full_name = COALESCE(?, full_name),
                     phone = COALESCE(?, phone),
                     region = COALESCE(?, region),
                     school = COALESCE(?, school),
-                    class = COALESCE(?, class)
+                    class = COALESCE(?, class),
+                    last_active = ?
                 WHERE user_id = ?
-            ''', (phone, region, school, class_name, user_id))
+            ''', (full_name, phone, region, school, class_name, current_time, user_id))
+            
+            if DEBUG:
+                print(f"📝 User updated: {user_id} - {full_name}")
+            return None  # No referral notification for updates
+        
+        # Insert new user
+        cursor.execute('''
+            INSERT INTO users 
+            (user_id, full_name, phone, region, school, class, join_date, last_active, is_banned, is_admin, referred_by, referral_notified)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0)
+        ''', (user_id, full_name, phone, region, school, class_name, current_time, current_time, referred_by))
         
         if DEBUG:
-            print(f"📝 User added/updated: {user_id} - {full_name}")
+            print(f"📝 New user added: {user_id} - {full_name}")
+            if referred_by:
+                print(f"🔗 Referred by: {referred_by}")
+        
+        return referred_by  # Return referrer ID for notification
+
+def update_user_activity(user_id):
+    """Update user's last active timestamp"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE users SET last_active = ? WHERE user_id = ?', (get_current_time(), user_id))
 
 def get_user(user_id):
     with get_db() as conn:
@@ -182,9 +261,9 @@ def get_all_users(limit=None, offset=0):
     with get_db() as conn:
         cursor = conn.cursor()
         if limit:
-            cursor.execute('SELECT * FROM users LIMIT ? OFFSET ?', (limit, offset))
+            cursor.execute('SELECT * FROM users ORDER BY join_date DESC LIMIT ? OFFSET ?', (limit, offset))
         else:
-            cursor.execute('SELECT * FROM users')
+            cursor.execute('SELECT * FROM users ORDER BY join_date DESC')
         return cursor.fetchall()
 
 def count_users():
@@ -206,14 +285,46 @@ def get_user_upload_count(user_id):
         return cursor.fetchone()[0]
 
 def get_user_referral_stats(user_id):
+    """Get referral stats for a user"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT COUNT(*) FROM users WHERE referred_by = ?', (user_id,))
         conversions = cursor.fetchone()[0]
         return {'conversions': conversions}
 
-# --- PDF functions ---
+def mark_referral_notified(user_id):
+    """Mark that referrer has been notified about a new referral"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE users SET referral_notified = 1 WHERE user_id = ?', (user_id,))
+
+def get_referrer_notification_status(user_id):
+    """Check if referrer has been notified about latest referral"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT referral_notified FROM users WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
+        return row['referral_notified'] == 1 if row else False
+
+def get_user_activity_stats(user_id):
+    """Get user activity stats: days since join, last active, etc."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT join_date, last_active FROM users WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
+        if row:
+            join_date = row['join_date']
+            last_active = row['last_active']
+            return {
+                'join_date': join_date,
+                'last_active': last_active
+            }
+        return None
+
+# ==================== PDF FUNCTIONS ====================
+
 def add_pdf(file_id, file_name, user_id, subject, tag, exam_year=None):
+    """Add PDF without file_size"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('''
@@ -332,7 +443,8 @@ def has_liked(pdf_id, user_id):
         cursor.execute('SELECT * FROM user_likes WHERE user_id = ? AND pdf_id = ?', (user_id, pdf_id))
         return cursor.fetchone() is not None
 
-# --- State functions ---
+# ==================== STATE FUNCTIONS ====================
+
 def set_user_state(user_id, state, data=None):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -355,7 +467,8 @@ def clear_user_state(user_id):
         cursor = conn.cursor()
         cursor.execute('DELETE FROM user_state WHERE user_id = ?', (user_id,))
 
-# --- Report functions ---
+# ==================== REPORT FUNCTIONS ====================
+
 def add_report(pdf_id, reported_by, report_text):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -388,7 +501,115 @@ def resolve_report(report_id):
         if DEBUG:
             print(f"✅ Report resolved: {report_id}")
 
-# --- Statistics ---
+# ==================== MEMBERSHIP FUNCTIONS ====================
+
+def add_requirement(name, req_type, link, description, created_by):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO requirements (name, type, link, description, created_at, created_by)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (name, req_type, link, description, get_current_time(), created_by))
+        req_id = cursor.lastrowid
+        if DEBUG:
+            print(f"➕ Requirement added: {name} ({req_type})")
+        return req_id
+
+def get_requirements(active_only=True):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if active_only:
+            cursor.execute('SELECT * FROM requirements WHERE is_active = 1 ORDER BY id')
+        else:
+            cursor.execute('SELECT * FROM requirements ORDER BY id')
+        return cursor.fetchall()
+
+def get_requirement(req_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM requirements WHERE id = ?', (req_id,))
+        return cursor.fetchone()
+
+def toggle_requirement(req_id, is_active):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE requirements SET is_active = ? WHERE id = ?', (1 if is_active else 0, req_id))
+        if DEBUG:
+            print(f"🔄 Requirement {req_id} toggled to {is_active}")
+
+def delete_requirement(req_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM requirements WHERE id = ?', (req_id,))
+        cursor.execute('DELETE FROM whatsapp_verifications WHERE requirement_id = ?', (req_id,))
+        cursor.execute('DELETE FROM memberships WHERE requirement_id = ?', (req_id,))
+        if DEBUG:
+            print(f"🗑️ Requirement deleted: {req_id}")
+
+def record_membership(user_id, requirement_id, is_member):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO memberships (user_id, requirement_id, joined_at, last_checked, is_member)
+            VALUES (?, ?, COALESCE((SELECT joined_at FROM memberships WHERE user_id = ? AND requirement_id = ?), ?), ?, ?)
+        ''', (user_id, requirement_id, user_id, requirement_id, get_current_time() if is_member else None, get_current_time(), 1 if is_member else 0))
+
+def get_user_memberships(user_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT r.*, m.is_member, m.joined_at, m.last_checked
+            FROM requirements r
+            LEFT JOIN memberships m ON r.id = m.requirement_id AND m.user_id = ?
+            WHERE r.is_active = 1
+        ''', (user_id,))
+        return cursor.fetchall()
+
+def is_telegram_member_recorded(user_id, requirement_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT is_member FROM memberships WHERE user_id = ? AND requirement_id = ?', (user_id, requirement_id))
+        row = cursor.fetchone()
+        return row['is_member'] == 1 if row else False
+
+def add_whatsapp_verification(user_id, requirement_id, verification_code):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO whatsapp_verifications (user_id, requirement_id, verified_at, verification_code)
+            VALUES (?, ?, ?, ?)
+        ''', (user_id, requirement_id, get_current_time(), verification_code))
+        if DEBUG:
+            print(f"📱 WhatsApp verification added for user {user_id}, requirement {requirement_id}")
+
+def is_whatsapp_verified(user_id, requirement_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM whatsapp_verifications WHERE user_id = ? AND requirement_id = ?', (user_id, requirement_id))
+        return cursor.fetchone() is not None
+
+def get_whatsapp_verification(user_id, requirement_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM whatsapp_verifications WHERE user_id = ? AND requirement_id = ?', (user_id, requirement_id))
+        return cursor.fetchone()
+
+def get_all_membership_stats():
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT r.id, r.name, r.type, r.link,
+                   COUNT(DISTINCT m.user_id) as members,
+                   (SELECT COUNT(*) FROM users) as total_users
+            FROM requirements r
+            LEFT JOIN memberships m ON r.id = m.requirement_id AND m.is_member = 1
+            WHERE r.is_active = 1
+            GROUP BY r.id
+        ''')
+        return cursor.fetchall()
+
+# ==================== STATISTICS ====================
+
 def get_stats():
     with get_db() as conn:
         cursor = conn.cursor()
@@ -405,7 +626,8 @@ def get_stats():
             'total_reports': total_reports,
         }
 
-# --- SQL execution for admin ---
+# ==================== SQL EXECUTION ====================
+
 def execute_sql(sql):
     with get_db() as conn:
         cursor = conn.cursor()

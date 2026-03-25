@@ -43,3 +43,25 @@ def update_state_data(user_id, data_update):
             current_data = {}
         current_data.update(data_update)
         set_user_state(user_id, current_state, current_data)
+
+def reset_user_state(user_id):
+    """Reset user state to default (no state)."""
+    clear_user_state(user_id)
+    if DEBUG:
+        print(f"🔄 State reset for {user_id}")
+
+def get_state_step(user_id):
+    """Get the current step from state data."""
+    _, data = get_user_state(user_id)
+    if data and 'step' in data:
+        return data['step']
+    return None
+
+def update_state_step(user_id, step):
+    """Update the step in state data."""
+    current_state, current_data = get_user_state(user_id)
+    if current_state:
+        if current_data is None:
+            current_data = {}
+        current_data['step'] = step
+        set_user_state(user_id, current_state, current_data)
