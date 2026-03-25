@@ -60,10 +60,6 @@ class Admin:
             InlineKeyboardButton("📊 Membership Stats", callback_data="admin_membership_stats")
         )
         markup.add(
-            InlineKeyboardButton("📋 Membership Events", callback_data="admin_membership_events"),
-            InlineKeyboardButton("📈 Member Analytics", callback_data="admin_membership_analytics")
-        )
-        markup.add(
             InlineKeyboardButton("🔙 Back to Main", callback_data="cancel")
         )
         
@@ -97,10 +93,6 @@ class Admin:
         downloads = db.get_user_download_count(target_user_id)
         referrals = db.get_user_referral_stats(target_user_id)
         
-        # Get membership status
-        whatsapp_confirmed = db.get_whatsapp_confirmed(target_user_id)
-        membership_status = "✅ Completed" if whatsapp_confirmed else "⏳ Pending"
-        
         # Format dates
         join_date = utils.format_date(user['join_date'])
         last_active = utils.format_date(user['last_active']) if user['last_active'] else "Never"
@@ -121,10 +113,6 @@ class Admin:
         text += f"📥 *Downloads:* `{downloads}`\n"
         text += f"👥 *Referrals:* `{referrals['conversions']}`\n"
         text += "━━━━━━━━━━━━━━━━━━━━━\n"
-        text += f"🔐 *Membership*\n"
-        text += f"├ WhatsApp: `{membership_status}`\n"
-        text += f"└ Telegram: Auto-detected\n"
-        text += "━━━━━━━━━━━━━━━━━━━━━\n"
         text += f"👑 *Admin:* `{'Yes' if user['is_admin'] else 'No'}`\n"
         text += f"🚫 *Banned:* `{'Yes' if user['is_banned'] else 'No'}`\n"
         
@@ -140,10 +128,6 @@ class Admin:
             markup.add(InlineKeyboardButton("👑 Remove Admin", callback_data=f"admin_remove_admin_{target_user_id}"))
         else:
             markup.add(InlineKeyboardButton("👑 Make Admin", callback_data=f"admin_make_admin_{target_user_id}"))
-        
-        # Membership management
-        if not whatsapp_confirmed:
-            markup.add(InlineKeyboardButton("✅ Confirm WhatsApp", callback_data=f"admin_confirm_whatsapp_{target_user_id}"))
         
         markup.add(
             InlineKeyboardButton("📄 View User's Uploads", callback_data=f"admin_user_uploads_{target_user_id}"),
@@ -276,8 +260,7 @@ class Admin:
             text += "*Current Requirements:*\n"
             for req in requirements[:5]:
                 status = "✅" if req['is_active'] else "❌"
-                type_icon = "📢" if req['type'] == 'telegram' else "💬"
-                text += f"\n{status} {type_icon} *{req['name']}* ({req['type'].upper()})\n"
+                text += f"\n{status} *{req['name']}* ({req['type'].upper()})\n"
                 text += f"   🔗 `{req['link'][:30]}...`\n"
             
             if len(requirements) > 5:
@@ -295,10 +278,6 @@ class Admin:
         markup.add(
             InlineKeyboardButton("📋 List All", callback_data="membership_list"),
             InlineKeyboardButton("🔄 Refresh", callback_data="admin_membership")
-        )
-        markup.add(
-            InlineKeyboardButton("📊 Detailed Stats", callback_data="admin_membership_stats"),
-            InlineKeyboardButton("📋 Event Log", callback_data="admin_membership_events")
         )
         markup.add(
             InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_back")
@@ -434,18 +413,16 @@ class Admin:
             self.bot.send_message(user_id, text, parse_mode='Markdown', reply_markup=markup)
     
     def show_membership_stats(self, user_id, message_id=None):
-        """Show detailed membership statistics for all requirements"""
+        """Show membership statistics for all requirements"""
         requirements = db.get_requirements(active_only=True)
         users = db.get_all_users()
         
-        text = "📊 *MEMBERSHIP STATISTICS*\n"
-        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        text = "📊 *Membership Statistics*\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━\n"
         text += f"👥 *Total Users:* `{len(users)}`\n\n"
         
         if requirements:
-            text += "*REQUIREMENTS BREAKDOWN*\n"
-            text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            
+            text += "*Active Requirements:*\n"
             for req in requirements:
                 members = 0
                 for user in users:
@@ -453,178 +430,25 @@ class Admin:
                         if utils.is_telegram_member(self.bot, user['user_id'], req['link']):
                             members += 1
                     else:
-                        if db.get_whatsapp_confirmed(user['user_id']):
+                        if db.is_whatsapp_verified(user['user_id'], req['id']):
                             members += 1
                 
                 percentage = int(members / len(users) * 100) if users else 0
                 type_icon = "📢" if req['type'] == 'telegram' else "💬"
                 
-                # Progress bar
-                bar_length = 20
-                filled = int(bar_length * percentage / 100)
-                bar = "█" * filled + "░" * (bar_length - filled)
-                
-                text += f"{type_icon} *{req['name']}*\n"
+                text += f"\n{type_icon} *{req['name']}*\n"
                 text += f"├ Type: `{req['type'].upper()}`\n"
-                text += f"├ Members: `{members}/{len(users)}` ({percentage}%)\n"
-                text += f"├ Progress: `{bar}`\n"
-                text += f"└ Link: `{req['link'][:50]}{'...' if len(req['link']) > 50 else ''}`\n\n"
-            
-            # Overall stats
-            total_joined_telegram = 0
-            total_joined_whatsapp = 0
-            
-            for user in users:
-                # Check if user has joined all Telegram
-                all_telegram = True
-                for req in requirements:
-                    if req['type'] == 'telegram':
-                        if not utils.is_telegram_member(self.bot, user['user_id'], req['link']):
-                            all_telegram = False
-                            break
-                if all_telegram:
-                    total_joined_telegram += 1
-                
-                # Check WhatsApp
-                if db.get_whatsapp_confirmed(user['user_id']):
-                    total_joined_whatsapp += 1
-            
-            text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            text += "*OVERALL COMPLETION*\n"
-            text += f"├ Telegram All Joined: `{total_joined_telegram}/{len(users)}` ({int(total_joined_telegram/len(users)*100) if users else 0}%)\n"
-            text += f"└ WhatsApp Confirmed: `{total_joined_whatsapp}/{len(users)}` ({int(total_joined_whatsapp/len(users)*100) if users else 0}%)\n"
+                text += f"├ Members: `{members}/{len(users)}` (`{percentage}%`)\n"
+                text += f"└ Link: `{req['link'][:40]}{'...' if len(req['link']) > 40 else ''}`\n"
         else:
             text += "*No active requirements.*\n"
         
-        text += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        text += "\n━━━━━━━━━━━━━━━━━━━━━\n"
         text += "*Note:* Users must join all active requirements to use the bot."
         
         markup = InlineKeyboardMarkup()
         markup.add(
             InlineKeyboardButton("🔄 Refresh", callback_data="admin_membership_stats"),
-            InlineKeyboardButton("📋 Events", callback_data="admin_membership_events"),
-            InlineKeyboardButton("🔙 Back", callback_data="admin_back")
-        )
-        
-        if message_id:
-            self.bot.edit_message_text(text, user_id, message_id, parse_mode='Markdown', reply_markup=markup)
-        else:
-            self.bot.send_message(user_id, text, parse_mode='Markdown', reply_markup=markup)
-    
-    def show_membership_events(self, user_id, message_id=None, page=0):
-        """Show recent membership events for monitoring"""
-        events = db.get_recent_membership_events(limit=20)
-        
-        if not events:
-            if message_id:
-                self.bot.edit_message_text("📭 No membership events found.", user_id, message_id)
-            else:
-                self.bot.send_message(user_id, "📭 No membership events found.")
-            return
-        
-        items_per_page = 10
-        total_pages = (len(events) + items_per_page - 1) // items_per_page
-        start = page * items_per_page
-        end = start + items_per_page
-        page_events = events[start:end]
-        
-        text = "📋 *MEMBERSHIP EVENTS*\n"
-        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        text += f"📄 Page `{page + 1}/{total_pages}` | Total: `{len(events)}` events\n\n"
-        
-        for event in page_events:
-            event_type_icon = "✅" if event['event_type'] == 'confirm_whatsapp' else "❓"
-            text += f"{event_type_icon} *{event['event_type'].replace('_', ' ').title()}*\n"
-            text += f"├ 👤 User: `{event['user_name'] or event['user_id']}`\n"
-            text += f"├ 📢 Requirement: `{event['requirement_name'] or 'N/A'}`\n"
-            text += f"└ 📅 Time: `{utils.format_date(event['event_date'])}`\n\n"
-        
-        markup = InlineKeyboardMarkup(row_width=3)
-        
-        # Navigation
-        if page > 0:
-            markup.add(InlineKeyboardButton("◀️ Prev", callback_data=f"membership_events_page_{page-1}"))
-        if page < total_pages - 1:
-            markup.add(InlineKeyboardButton("Next ▶️", callback_data=f"membership_events_page_{page+1}"))
-        
-        markup.add(InlineKeyboardButton("🔄 Refresh", callback_data="admin_membership_events"))
-        markup.add(InlineKeyboardButton("🔙 Back", callback_data="admin_back"))
-        
-        if message_id:
-            self.bot.edit_message_text(text, user_id, message_id, parse_mode='Markdown', reply_markup=markup)
-        else:
-            self.bot.send_message(user_id, text, parse_mode='Markdown', reply_markup=markup)
-    
-    def show_membership_analytics(self, user_id, message_id=None):
-        """Show membership analytics for admin"""
-        users = db.get_all_users()
-        requirements = db.get_requirements(active_only=True)
-        
-        if not users or not requirements:
-            text = "📊 *MEMBERSHIP ANALYTICS*\n\n"
-            text += "Not enough data to display analytics.\n"
-            text += "Add requirements and wait for users to join."
-            self.bot.send_message(user_id, text, parse_mode='Markdown')
-            return
-        
-        text = "📈 *MEMBERSHIP ANALYTICS*\n"
-        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        
-        # Completion distribution
-        completed_users = 0
-        partial_users = 0
-        
-        for user in users:
-            all_joined = True
-            for req in requirements:
-                if req['type'] == 'telegram':
-                    if not utils.is_telegram_member(self.bot, user['user_id'], req['link']):
-                        all_joined = False
-                        break
-                else:
-                    if not db.get_whatsapp_confirmed(user['user_id']):
-                        all_joined = False
-                        break
-            if all_joined:
-                completed_users += 1
-            else:
-                partial_users += 1
-        
-        total = len(users)
-        completion_rate = int(completed_users / total * 100) if total > 0 else 0
-        
-        text += "*COMPLETION RATE*\n"
-        bar_length = 20
-        filled = int(bar_length * completion_rate / 100)
-        bar = "█" * filled + "░" * (bar_length - filled)
-        text += f"└ `{bar}` {completion_rate}%\n\n"
-        
-        text += "*DISTRIBUTION*\n"
-        text += f"├ ✅ Fully Completed: `{completed_users}` users\n"
-        text += f"└ ⏳ Partial/None: `{partial_users}` users\n\n"
-        
-        # Engagement trend (last 7 days)
-        text += "*RECENT ACTIVITY (Last 7 days)*\n"
-        from datetime import timedelta
-        now = get_current_time()
-        
-        for i in range(7, 0, -1):
-            date = now - timedelta(days=i)
-            day_count = 0
-            for event in db.get_recent_membership_events(limit=100):
-                event_date = datetime.fromisoformat(event['event_date']) if isinstance(event['event_date'], str) else event['event_date']
-                if event_date.date() == date.date():
-                    day_count += 1
-            bar = "█" * min(day_count, 10)
-            text += f"├ {date.strftime('%a')}: `{bar}` ({day_count} events)\n"
-        
-        text += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        text += "*Actions:*"
-        
-        markup = InlineKeyboardMarkup()
-        markup.add(
-            InlineKeyboardButton("📊 Detailed Stats", callback_data="admin_membership_stats"),
-            InlineKeyboardButton("📋 Events", callback_data="admin_membership_events"),
             InlineKeyboardButton("🔙 Back", callback_data="admin_back")
         )
         
@@ -919,17 +743,7 @@ class Admin:
                 parse_mode='Markdown'
             )
             return False
-    
-    def admin_confirm_whatsapp(self, user_id, target_user_id, message_id=None):
-        """Admin manually confirm WhatsApp for a user"""
-        db.set_whatsapp_confirmed(target_user_id, True)
-        db.log_membership_event(target_user_id, None, 'admin_confirm')
-        
-        self.bot.answer_callback_query(user_id, f"✅ WhatsApp confirmed for user {target_user_id}!")
-        
-        # Refresh user details view
-        self.show_user_details(user_id, target_user_id, message_id)
-    
+
     def start_admin_reply_to_user(self, user_id, target_user_id, message_id=None):
         """Start admin reply to user"""
         if DEBUG:
@@ -968,7 +782,7 @@ class Admin:
             f"{reply_text}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f"👤 *Admin:* {admin_name}\n"
-            f"📅 *Date:* {get_current_time().strftime('%Y-%m-%d %I:%M %p')}"
+            f"📅 *Date:* {get_current_time().strftime('%Y-%m-%d %H:%M')}"
         )
         
         try:
@@ -982,68 +796,6 @@ class Admin:
             if DEBUG:
                 print(f"❌ Failed to send admin reply to user {target_user_id}: {e}")
             return False
-    def delete_pdf(self, user_id, pdf_id, message_id=None):
-        """Delete PDF with confirmation"""
-        pdf = db.get_pdf(pdf_id)
-        if not pdf:
-            self.bot.answer_callback_query(user_id, "❌ PDF not found.")
-            return
-        
-        # Check permission
-        can_delete = self.is_admin(user_id) or (pdf['uploaded_by'] == user_id)
-        
-        if not can_delete:
-            self.bot.answer_callback_query(user_id, "❌ You don't have permission to delete this PDF.")
-            return
-        
-        # Ask for confirmation
-        markup = InlineKeyboardMarkup(row_width=2)
-        markup.add(
-            InlineKeyboardButton("✅ Yes, Delete", callback_data=f"confirm_delete_{pdf_id}"),
-            InlineKeyboardButton("❌ Cancel", callback_data=f"view_{pdf_id}")
-        )
-        
-        confirm_text = (
-            f"⚠️ *Delete PDF?*\n\n"
-            f"📄 *File:* `{pdf['file_name'][:50]}`\n"
-            f"🆔 *ID:* `{pdf_id}`\n\n"
-            f"This action cannot be undone.\n\n"
-            f"Are you sure?"
-        )
-        
-        if message_id:
-            self.bot.edit_message_text(
-                confirm_text, user_id, message_id,
-                parse_mode='Markdown', reply_markup=markup
-            )
-        else:
-            self.bot.send_message(
-                user_id, confirm_text,
-                parse_mode='Markdown', reply_markup=markup
-            )
-    
-    def confirm_delete_pdf(self, user_id, pdf_id, message_id=None):
-        """Confirm and execute PDF deletion"""
-        pdf = db.get_pdf(pdf_id)
-        if not pdf:
-            self.bot.answer_callback_query(user_id, "❌ PDF not found.")
-            return
-        
-        # Delete PDF and related data
-        db.delete_pdf(pdf_id)
-        
-        if DEBUG:
-            print(f"🗑️ PDF {pdf_id} deleted by user {user_id}")
-        
-        # Send confirmation
-        self.bot.answer_callback_query(user_id, f"✅ PDF deleted!")
-        
-        # Delete the confirmation message
-        if message_id:
-            try:
-                self.bot.delete_message(user_id, message_id)
-            except:
-                pass
     # ==================== Admin Callback Handler ====================
     
     def handle_admin_callback(self, call):
@@ -1078,22 +830,6 @@ class Admin:
         
         if data == "admin_membership_stats":
             self.show_membership_stats(user_id, call.message.message_id)
-            self.bot.answer_callback_query(call.id)
-            return
-        
-        if data == "admin_membership_events":
-            self.show_membership_events(user_id, call.message.message_id)
-            self.bot.answer_callback_query(call.id)
-            return
-        
-        if data == "admin_membership_analytics":
-            self.show_membership_analytics(user_id, call.message.message_id)
-            self.bot.answer_callback_query(call.id)
-            return
-        
-        if data.startswith("membership_events_page_"):
-            page = int(data.split("_")[3])
-            self.show_membership_events(user_id, call.message.message_id, page)
             self.bot.answer_callback_query(call.id)
             return
         
@@ -1207,17 +943,12 @@ class Admin:
             self.show_membership_list(user_id, call.message.message_id)
             return
         
-        # Admin WhatsApp confirmation
-        if data.startswith("admin_confirm_whatsapp_"):
-            target_user_id = int(data.split("_")[3])
-            self.admin_confirm_whatsapp(user_id, target_user_id, call.message.message_id)
-            return
-        
-        # Membership verification (legacy)
+        # Membership verification
         if data.startswith("verify_telegram_"):
             req_id = int(data.split("_")[2])
             if self.verify_telegram_membership(user_id, req_id):
                 self.bot.answer_callback_query(call.id, "✅ Verified! You can now use the bot.")
+                # Check all requirements via handlers
                 if self.handlers:
                     all_met, missing = self.handlers.check_all_memberships(user_id)
                     if all_met and self.handlers:
@@ -1254,9 +985,11 @@ class Admin:
             self.bot.answer_callback_query(call.id)
             return
         
+        
         # Broadcast
         if data == "admin_broadcast":
             db.set_user_state(user_id, 'admin_broadcast', {})
+            # Delete the old message and send a new one with cancel keyboard
             self.bot.delete_message(user_id, call.message.message_id)
             self.bot.send_message(
                 user_id,
@@ -1269,12 +1002,16 @@ class Admin:
         
         # SQL Console
         if data == "admin_sql":
+            # Clear any existing state first
             db.clear_user_state(user_id)
+            
+            # Set SQL console state
             db.set_user_state(user_id, 'admin_sql', {})
             
             if DEBUG:
                 print(f"🔧 SQL Console opened by admin {user_id}")
             
+            # Delete the old message and send a new one with cancel keyboard
             try:
                 self.bot.delete_message(user_id, call.message.message_id)
             except:
@@ -1288,6 +1025,7 @@ class Admin:
             )
             self.bot.answer_callback_query(call.id)
             return
+
         
         # Users list with clickable buttons
         if data == "admin_users":
@@ -1444,5 +1182,6 @@ class Admin:
             report_id = int(data.split("_")[2])
             db.resolve_report(report_id)
             self.bot.answer_callback_query(call.id, "✅ Report resolved!")
+            # Refresh reports view
             self.handle_admin_callback(call)
             return

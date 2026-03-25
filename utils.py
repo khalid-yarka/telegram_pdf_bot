@@ -15,7 +15,7 @@ def get_current_time():
     return datetime.now(SOMALIA_TZ)
 
 def format_date(dt):
-    """Format datetime to string with timezone handling"""
+    """Format datetime to string with timezone handling (12-hour format)"""
     if dt is None:
         return "Unknown"
     
@@ -30,7 +30,7 @@ def format_date(dt):
     if dt.tzinfo is None:
         dt = SOMALIA_TZ.localize(dt)
     
-    return dt.strftime("%Y-%m-%d %H:%M")
+    return dt.strftime("%Y-%m-%d %I:%M %p")
 
 def format_file_size(bytes_size):
     """Format file size from bytes to human readable format"""
@@ -87,7 +87,6 @@ def create_main_menu_keyboard(user_id=None):
     )
     
     # Add admin button if user is admin
-    
     if user_id:
         from database import get_user
         from config import ADMIN_IDS
@@ -110,13 +109,17 @@ def create_cancel_keyboard():
 def remove_keyboard():
     """Remove keyboard (hide buttons)"""
     return ReplyKeyboardRemove()
-
-def create_subject_keyboard():
+    
+def create_subject_keyboard(for_search=False):
     """Create subject selection keyboard with 3 columns for better UI"""
     markup = InlineKeyboardMarkup(row_width=3)
     buttons = []
+    
+    # Choose prefix based on usage
+    prefix = "search_subject_" if for_search else "subject_"
+    
     for subject in texts.SUBJECTS:
-        buttons.append(InlineKeyboardButton(subject, callback_data=f"subject_{subject}"))
+        buttons.append(InlineKeyboardButton(subject, callback_data=f"{prefix}{subject}"))
     
     # Add buttons in rows of 3
     for i in range(0, len(buttons), 3):
@@ -125,6 +128,8 @@ def create_subject_keyboard():
     # Add cancel button at bottom
     markup.add(InlineKeyboardButton(texts.BUTTON_CANCEL, callback_data="cancel"))
     return markup
+
+
 
 def create_tag_keyboard():
     """Create tag selection keyboard with 2 columns for better UI"""
@@ -333,6 +338,99 @@ def create_membership_verify_button(requirement_id, req_type):
             InlineKeyboardButton(texts.BUTTON_VERIFY, callback_data=f"verify_whatsapp_{requirement_id}")
         )
     return markup
+
+# ==================== MEMBERSHIP KEYBOARD FUNCTIONS ====================
+
+def create_membership_telegram_button(requirement):
+    """Create a join button for Telegram channel/group"""
+    link = requirement['link']
+    if link.startswith('@'):
+        link = f"https://t.me/{link[1:]}"
+    elif not link.startswith('http'):
+        link = f"https://t.me/{link}"
+    
+    return InlineKeyboardButton(
+        f"📢 Join {requirement['name'][:20]}",
+        url=link
+    )
+
+def create_membership_whatsapp_buttons(requirement):
+    """Create buttons for WhatsApp group (join + confirm)"""
+    return [
+        InlineKeyboardButton(f"💬 Join {requirement['name'][:15]}", url=requirement['link']),
+        InlineKeyboardButton(f"✅ Confirm {requirement['name'][:10]}", callback_data=f"confirm_whatsapp_{requirement['id']}")
+    ]
+
+def create_membership_refresh_button():
+    """Create refresh status button"""
+    return InlineKeyboardButton("🔄 Refresh Status", callback_data="refresh_membership")
+
+def create_membership_continue_button():
+    """Create continue to main menu button"""
+    return InlineKeyboardButton("🎉 Continue to Main Menu", callback_data="membership_complete")
+
+def create_progress_bar(current, total, length=10):
+    """Create a visual progress bar"""
+    if total == 0:
+        return "░" * length
+    
+    percent = int((current / total) * 100)
+    filled = int(length * percent / 100)
+    bar = "█" * filled + "░" * (length - filled)
+    return bar
+
+def format_membership_status_text(telegram_reqs, whatsapp_reqs, telegram_joined, whatsapp_joined):
+    """Format membership status text for display"""
+    total_telegram = len(telegram_reqs)
+    total_whatsapp = len(whatsapp_reqs)
+    total_joined = telegram_joined + whatsapp_joined
+    total_required = total_telegram + total_whatsapp
+    
+    if total_required == 0:
+        return "✅ No membership requirements. You have full access!"
+    
+    text = "🔐 *MEMBERSHIP REQUIREMENTS*\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    # Progress bar
+    bar = create_progress_bar(total_joined, total_required)
+    percent = int((total_joined / total_required) * 100) if total_required > 0 else 0
+    text += f"*Progress:* `{bar}` {total_joined}/{total_required} ({percent}%)\n\n"
+    
+    # Telegram Channels
+    if telegram_reqs:
+        text += "📢 *TELEGRAM CHANNELS/GROUPS* (Auto-detected)\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        for req in telegram_reqs:
+            if req.get('is_member', False):
+                text += f"✅ *{req['name']}* - Joined\n"
+            else:
+                text += f"❌ *{req['name']}* - Not joined\n"
+                text += f"   🔗 `{req['link']}`\n"
+        text += "\n"
+    
+    # WhatsApp Groups
+    if whatsapp_reqs:
+        text += "💬 *WHATSAPP GROUPS* (Confirm after joining)\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        for req in whatsapp_reqs:
+            if req.get('is_member', False):
+                text += f"✅ *{req['name']}* - Confirmed\n"
+            else:
+                text += f"❌ *{req['name']}* - Not confirmed\n"
+                text += f"   🔗 `{req['link']}`\n"
+        text += "\n"
+    
+    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    
+    if total_joined == total_required:
+        text += "🎉 *Congratulations!* You've joined all required communities!\n"
+        text += "Click the button below to continue to the main menu.\n\n"
+    else:
+        text += "⚠️ *Please join all required channels/groups above* to access the bot.\n"
+        text += "For WhatsApp groups, click 'Confirm' after joining.\n\n"
+    
+    return text
 
 def get_pdf_emoji(tag):
     """Get emoji based on PDF tag for better visual"""

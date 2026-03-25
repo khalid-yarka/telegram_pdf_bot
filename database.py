@@ -28,7 +28,7 @@ def init_db():
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Users table with last_active field
+        # Users table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
@@ -47,15 +47,13 @@ def init_db():
             )
         ''')
         
-        # Check if last_active column exists, if not add it
+        # Add last_active column if missing
         cursor.execute("PRAGMA table_info(users)")
         columns = [col[1] for col in cursor.fetchall()]
         if 'last_active' not in columns:
             cursor.execute('ALTER TABLE users ADD COLUMN last_active TIMESTAMP')
-            if DEBUG:
-                print("✅ Added last_active column to users table")
         
-        # PDFs table - without file_size
+        # PDFs table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS pdfs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,7 +120,7 @@ def init_db():
             )
         ''')
         
-        # Requirements table (channels/groups users must join)
+        # Requirements table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS requirements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -164,8 +162,37 @@ def init_db():
             )
         ''')
         
+        # ==================== NEW TABLES ====================
+        
+        # User membership tracking table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_membership (
+                user_id INTEGER PRIMARY KEY,
+                membership_message_id INTEGER,
+                whatsapp_reminder_count INTEGER DEFAULT 0,
+                whatsapp_confirmed BOOLEAN DEFAULT 0,
+                telegram_confirmed BOOLEAN DEFAULT 0,
+                last_checked TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            )
+        ''')
+        
+        # Membership events log
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS membership_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                requirement_id INTEGER,
+                event_type TEXT,
+                event_date TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                FOREIGN KEY (requirement_id) REFERENCES requirements(id)
+            )
+        ''')
+        
         if DEBUG:
             print("✅ Database tables created/verified successfully")
+
 
 # ==================== USER FUNCTIONS ====================
 
@@ -624,6 +651,191 @@ def get_stats():
             'total_downloads': total_downloads,
             'pending_pdfs': pending_pdfs,
             'total_reports': total_reports,
+        }
+
+# ==================== MEMBERSHIP TRACKING FUNCTIONS ====================
+
+def set_user_membership_message(user_id, message_id):
+    """Store membership message ID for a user"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Check if record exists
+        cursor.execute('SELECT user_id FROM user_membership WHERE user_id = ?', (user_id,))
+        exists = cursor.fetchone()
+        
+        if exists:
+            cursor.execute('''
+                UPDATE user_membership 
+                SET membership_message_id = ?, last_checked = ?
+                WHERE user_id = ?
+            ''', (message_id, get_current_time(), user_id))
+        else:
+            cursor.execute('''
+                INSERT INTO user_membership (user_id, membership_message_id, last_checked)
+                VALUES (?, ?, ?)
+            ''', (user_id, message_id, get_current_time()))
+
+def get_user_membership_message(user_id):
+    """Get stored membership message ID"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT membership_message_id FROM user_membership WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
+        return row['membership_message_id'] if row else None
+
+def set_whatsapp_confirmed(user_id, confirmed=True):
+    """Mark WhatsApp confirmation status"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Check if record exists
+        cursor.execute('SELECT user_id FROM user_membership WHERE user_id = ?', (user_id,))
+        exists = cursor.fetchone()
+        
+        if exists:
+            cursor.execute('''
+                UPDATE user_membership 
+                SET whatsapp_confirmed = ?, last_checked = ?
+                WHERE user_id = ?
+            ''', (1 if confirmed else 0, get_current_time(), user_id))
+        else:
+            cursor.execute('''
+                INSERT INTO user_membership (user_id, whatsapp_confirmed, last_checked)
+                VALUES (?, ?, ?)
+            ''', (user_id, 1 if confirmed else 0, get_current_time()))
+
+def get_whatsapp_confirmed(user_id):
+    """Get WhatsApp confirmation status"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT whatsapp_confirmed FROM user_membership WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
+        return row['whatsapp_confirmed'] == 1 if row else False
+
+def increment_whatsapp_reminder(user_id):
+    """Increment WhatsApp reminder count"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT user_id FROM user_membership WHERE user_id = ?', (user_id,))
+        exists = cursor.fetchone()
+        
+        if exists:
+            cursor.execute('''
+                UPDATE user_membership 
+                SET whatsapp_reminder_count = whatsapp_reminder_count + 1, last_checked = ?
+                WHERE user_id = ?
+            ''', (get_current_time(), user_id))
+        else:
+            cursor.execute('''
+                INSERT INTO user_membership (user_id, whatsapp_reminder_count, last_checked)
+                VALUES (?, 1, ?)
+            ''', (user_id, get_current_time()))
+
+def get_whatsapp_reminder_count(user_id):
+    """Get WhatsApp reminder count"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT whatsapp_reminder_count FROM user_membership WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
+        return row['whatsapp_reminder_count'] if row else 0
+
+def log_membership_event(user_id, requirement_id, event_type):
+    """Log membership event for admin monitoring"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO membership_events (user_id, requirement_id, event_type, event_date)
+            VALUES (?, ?, ?, ?)
+        ''', (user_id, requirement_id, event_type, get_current_time()))
+
+def get_recent_membership_events(limit=20):
+    """Get recent membership events for admin monitoring"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT me.*, u.full_name as user_name, r.name as requirement_name
+            FROM membership_events me
+            LEFT JOIN users u ON me.user_id = u.user_id
+            LEFT JOIN requirements r ON me.requirement_id = r.id
+            ORDER BY me.event_date DESC
+            LIMIT ?
+        ''', (limit,))
+        return cursor.fetchall()
+
+def get_membership_stats_by_requirement(requirement_id=None):
+    """Get membership statistics for a specific requirement or all"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if requirement_id:
+            cursor.execute('''
+                SELECT 
+                    COUNT(DISTINCT u.user_id) as total_users,
+                    COUNT(DISTINCT CASE WHEN m.is_member = 1 THEN u.user_id END) as members,
+                    COUNT(DISTINCT CASE WHEN m.is_member = 0 THEN u.user_id END) as non_members
+                FROM users u
+                LEFT JOIN memberships m ON u.user_id = m.user_id AND m.requirement_id = ?
+            ''', (requirement_id,))
+        else:
+            cursor.execute('''
+                SELECT r.id, r.name, r.type, r.link,
+                       COUNT(DISTINCT u.user_id) as total_users,
+                       COUNT(DISTINCT CASE WHEN m.is_member = 1 THEN u.user_id END) as members,
+                       COUNT(DISTINCT CASE WHEN m.is_member = 0 THEN u.user_id END) as non_members
+                FROM requirements r
+                CROSS JOIN users u
+                LEFT JOIN memberships m ON u.user_id = m.user_id AND r.id = m.requirement_id
+                WHERE r.is_active = 1
+                GROUP BY r.id
+            ''')
+        return cursor.fetchall()
+
+def get_membership_completion_stats():
+    """Get overall membership completion statistics"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        requirements = get_requirements(active_only=True)
+        
+        if not requirements:
+            return {'total_users': 0, 'completed': 0, 'partial': 0, 'none': 0}
+        
+        users = get_all_users()
+        completed = 0
+        partial = 0
+        none = 0
+        
+        for user in users:
+            all_joined = True
+            any_joined = False
+            
+            for req in requirements:
+                if req['type'] == 'telegram':
+                    # For Telegram, we need to check membership
+                    # This is a simplified version - actual check needs bot instance
+                    # For stats, we use recorded memberships
+                    membership = cursor.execute('''
+                        SELECT is_member FROM memberships 
+                        WHERE user_id = ? AND requirement_id = ?
+                    ''', (user['user_id'], req['id'])).fetchone()
+                    is_member = membership['is_member'] == 1 if membership else False
+                else:
+                    is_member = get_whatsapp_confirmed(user['user_id'])
+                
+                if is_member:
+                    any_joined = True
+                else:
+                    all_joined = False
+            
+            if all_joined and any_joined:
+                completed += 1
+            elif any_joined:
+                partial += 1
+            else:
+                none += 1
+        
+        return {
+            'total_users': len(users),
+            'completed': completed,
+            'partial': partial,
+            'none': none
         }
 
 # ==================== SQL EXECUTION ====================

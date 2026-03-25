@@ -99,24 +99,41 @@ class Handlers:
                 reply_markup=utils.create_main_menu_keyboard(user_id)
             )
     
-    # ==================== New Membership System Methods ====================
+    def check_all_memberships(self, user_id):
+        """Check if user meets all membership requirements and track membership"""
+        requirements = db.get_requirements(active_only=True)
+        
+        if not requirements:
+            return True, None
+        
+        all_met = True
+        missing_req = None
+        
+        for req in requirements:
+            is_member = False
+            
+            if req['type'] == 'telegram':
+                is_member = utils.is_telegram_member(self.bot, user_id, req['link'])
+            else:  # whatsapp
+                is_member = db.is_whatsapp_verified(user_id, req['id'])
+            
+            # Record membership status for tracking
+            db.record_membership(user_id, req['id'], is_member)
+            
+            if not is_member:
+                all_met = False
+                missing_req = req
+                break
+        
+        return all_met, missing_req
     
+    # ==================== New Membership System Methods ====================
     def get_all_membership_status(self, user_id):
         """Get status of all membership requirements (Telegram auto-detected)"""
         requirements = db.get_requirements(active_only=True)
         
         if not requirements:
-            return {
-                'telegram': [],
-                'whatsapp': [],
-                'telegram_joined': 0,
-                'whatsapp_joined': 0,
-                'total_telegram': 0,
-                'total_whatsapp': 0,
-                'total_joined': 0,
-                'total_required': 0,
-                'all_joined': True
-            }
+            return [], 0, 0
         
         telegram_reqs = []
         whatsapp_reqs = []
@@ -133,7 +150,7 @@ class Handlers:
                     'name': req['name'],
                     'link': req['link'],
                     'is_member': is_member,
-                    'description': req['description'] if req['description'] else None
+                    'description': req.get('description')
                 })
             else:  # whatsapp
                 is_verified = db.get_whatsapp_confirmed(user_id)
@@ -142,7 +159,7 @@ class Handlers:
                     'name': req['name'],
                     'link': req['link'],
                     'is_member': is_verified,
-                    'description': req['description'] if req['description'] else None
+                    'description': req.get('description')
                 })
                 if is_verified:
                     whatsapp_joined += 1
@@ -173,12 +190,11 @@ class Handlers:
         text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         
         # Progress bar
-        if status['total_required'] > 0:
-            percent = int((status['total_joined'] / status['total_required']) * 100)
-            bar_length = 10
-            filled = int(bar_length * percent / 100)
-            bar = "█" * filled + "░" * (bar_length - filled)
-            text += f"*Progress:* `{bar}` {status['total_joined']}/{status['total_required']} ({percent}%)\n\n"
+        percent = int((status['total_joined'] / status['total_required']) * 100)
+        bar_length = 10
+        filled = int(bar_length * percent / 100)
+        bar = "█" * filled + "░" * (bar_length - filled)
+        text += f"*Progress:* `{bar}` {status['total_joined']}/{status['total_required']} ({percent}%)\n\n"
         
         # Telegram Channels
         if status['telegram']:
@@ -237,6 +253,7 @@ class Handlers:
         # Add buttons for WhatsApp groups
         for req in status['whatsapp']:
             if not req['is_member']:
+                # Add join link and confirm button
                 markup.add(
                     InlineKeyboardButton(f"💬 Join {req['name'][:15]}", url=req['link']),
                     InlineKeyboardButton(f"✅ Confirm {req['name'][:10]}", callback_data=f"confirm_whatsapp_{req['id']}")
@@ -246,7 +263,7 @@ class Handlers:
         markup.add(InlineKeyboardButton("🔄 Refresh Status", callback_data="refresh_membership"))
         
         # Continue button if all joined
-        if status['all_joined'] and status['total_required'] > 0:
+        if status['all_joined']:
             markup.add(InlineKeyboardButton("🎉 Continue to Main Menu", callback_data="membership_complete"))
         
         return markup
@@ -313,42 +330,8 @@ class Handlers:
         )
         
         if DEBUG:
-            print(f"🎉 Membership completed for user {user_id}")
-    
-    def check_all_memberships(self, user_id):
-        """Check if user meets all membership requirements and update status"""
-        requirements = db.get_requirements(active_only=True)
-        
-        if not requirements:
-            return True, None
-        
-        all_met = True
-        missing_req = None
-        status = self.get_all_membership_status(user_id)
-        
-        # If all joined, return True
-        if status['all_joined']:
-            return True, None
-        
-        # Find first missing requirement
-        for req in requirements:
-            if req['type'] == 'telegram':
-                is_member = utils.is_telegram_member(self.bot, user_id, req['link'])
-                db.record_membership(user_id, req['id'], is_member)
-                
-                if not is_member:
-                    all_met = False
-                    missing_req = req
-                    break
-            else:  # whatsapp
-                is_confirmed = db.get_whatsapp_confirmed(user_id)
-                if not is_confirmed:
-                    all_met = False
-                    missing_req = req
-                    break
-        
-        return all_met, missing_req
-    
+            print(f"🎉 Membership completed for user {user_id}") 
+
     def require_membership(self, func):
         """Decorator to check membership AFTER user is registered"""
         def wrapper(message_or_call, *args, **kwargs):
@@ -369,10 +352,11 @@ class Handlers:
             
             if not all_met:
                 if DEBUG:
-                    print(f"🔒 User {user_id} missing membership")
+                    print(f"🔒 User {user_id} missing membership: {missing['name'] if missing else 'Unknown'}")
                 
-                # Show membership requirements screen
-                self.show_membership_requirements(user_id)
+                # Send membership required message
+                if missing:
+                    self.send_membership_required_message(user_id, missing)
                 return
             
             # User passed membership check, execute original function
@@ -381,9 +365,41 @@ class Handlers:
         return wrapper
     
     def send_membership_required_message(self, user_id, requirement):
-        """Legacy method - replaced by show_membership_requirements"""
-        # Use new system instead
-        self.show_membership_requirements(user_id)
+        """Send message asking user to join requirement"""
+        type_icon = "📢" if requirement['type'] == 'telegram' else "💬"
+        
+        text = f"🔒 *Membership Required*\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        text += f"To use this bot, you must join:\n\n"
+        text += f"{type_icon} *{requirement['name']}*\n"
+        text += f"📌 *Type:* `{requirement['type'].upper()}`\n"
+        
+        if requirement['description']:
+            text += f"📝 *Description:* {requirement['description']}\n\n"
+        
+        text += f"🔗 *Link:* `{requirement['link']}`\n\n"
+        
+        if requirement['type'] == 'telegram':
+            text += "After joining, click the button below to verify."
+            markup = InlineKeyboardMarkup(row_width=1)
+            # Format the link
+            link = requirement['link']
+            if link.startswith('@'):
+                link = f"https://t.me/{link[1:]}"
+            
+            markup.add(
+                InlineKeyboardButton("✅ I've Joined", callback_data=f"verify_telegram_{requirement['id']}"),
+                InlineKeyboardButton("📢 Join Channel/Group", url=link)
+            )
+        else:  # whatsapp
+            text += "After joining the WhatsApp group, click the button below to verify."
+            markup = InlineKeyboardMarkup()
+            markup.add(
+                InlineKeyboardButton("📱 Join WhatsApp Group", url=requirement['link']),
+                InlineKeyboardButton("✅ Verify", callback_data=f"verify_whatsapp_{requirement['id']}")
+            )
+        
+        self.bot.send_message(user_id, text, parse_mode='Markdown', reply_markup=markup)
     
     def notify_referrer(self, referrer_id, new_user_id, new_user_name):
         """Notify the referrer that someone used their link"""
@@ -460,7 +476,7 @@ class Handlers:
             # Check membership for existing user
             all_met, missing = self.check_all_memberships(user_id)
             if not all_met:
-                self.show_membership_requirements(user_id)
+                self.send_membership_required_message(user_id, missing)
                 return
             
             if start_param and start_param.startswith('pdf_'):
@@ -542,7 +558,7 @@ class Handlers:
         # Check membership before upload
         all_met, missing = self.check_all_memberships(user_id)
         if not all_met:
-            self.show_membership_requirements(user_id)
+            self.send_membership_required_message(user_id, missing)
             return
         
         current_state, data = db.get_user_state(user_id)
@@ -690,7 +706,7 @@ class Handlers:
         if user and not user['is_banned']:
             all_met, missing = self.check_all_memberships(user_id)
             if not all_met:
-                self.show_membership_requirements(user_id)
+                self.send_membership_required_message(user_id, missing)
                 return
         
         # Handle other states
@@ -1107,12 +1123,7 @@ class Handlers:
             parse_mode='Markdown'
         )
         
-        # After registration, check membership requirements
-        all_met, missing = self.check_all_memberships(user_id)
-        if not all_met:
-            self.show_membership_requirements(user_id)
-        else:
-            self.show_main_menu(user_id)
+        self.show_main_menu(user_id)
         
         if pending_pdf:
             self.handle_pdf_share(user_id, pending_pdf)
@@ -1343,17 +1354,20 @@ class Handlers:
             self.bot.send_message(user_id, texts.NOT_REGISTERED)
             return
         
+        # Clear any existing search state first
         db.clear_user_state(user_id)
+        
+        # Set fresh search state
         db.set_user_state(user_id, 'search', {'step': 'subject'})
         
         if DEBUG:
-            print(f"🔍 Search started by user {user_id}")
+            print(f"🔍 Search started by user {user_id}, state set to search/subject")
         
         self.bot.send_message(
             user_id,
             texts.SEARCH_START,
             parse_mode='Markdown',
-            reply_markup=utils.create_subject_keyboard(for_search=True)  # ← CHANGE HERE
+            reply_markup=utils.create_subject_keyboard()
         )
     
     def handle_search_subject_callback(self, call):
@@ -1924,7 +1938,7 @@ class Handlers:
             f"{broadcast_text}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f"👤 *Sent by:* {admin_name}\n"
-            f"📅 *Date:* {get_current_time().strftime('%Y-%m-%d %I:%M %p')}\n\n"
+            f"📅 *Date:* {get_current_time().strftime('%Y-%m-%d %H:%M')}\n\n"
             f"_To reply, click the button below_"
         )
         
@@ -2070,7 +2084,7 @@ class Handlers:
             f"🆔 *ID:* `{user_id}`\n"
             f"🎓 *Class:* {user_class}\n"
             f"📍 *Region:* {user_region}\n"
-            f"📅 *Date:* {get_current_time().strftime('%Y-%m-%d %I:%M %p')}\n"
+            f"📅 *Date:* {get_current_time().strftime('%Y-%m-%d %H:%M')}\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"_Use the buttons below to reply back to this user_"
         )
@@ -2235,41 +2249,6 @@ class Handlers:
             self.handle_share_callback(call)
             return
         
-        # ==================== New Membership Callbacks ====================
-        
-        # Handle refresh membership
-        if data == "refresh_membership":
-            self.show_membership_requirements(user_id)
-            self.bot.answer_callback_query(call.id, "✅ Status refreshed!")
-            return
-        
-        # Handle membership complete
-        if data == "membership_complete":
-            self.complete_membership(user_id)
-            self.bot.answer_callback_query(call.id, "🎉 Welcome to Ardayda Bot!")
-            return
-        
-        # Handle WhatsApp confirmation
-        if data.startswith("confirm_whatsapp_"):
-            req_id = int(data.split("_")[2])
-            
-            # Mark WhatsApp as confirmed
-            db.set_whatsapp_confirmed(user_id, True)
-            db.log_membership_event(user_id, req_id, 'confirm_whatsapp')
-            
-            # Update membership message
-            self.show_membership_requirements(user_id)
-            
-            # Check if all requirements are now met
-            status = self.get_all_membership_status(user_id)
-            if status['all_joined']:
-                self.bot.answer_callback_query(call.id, "✅ All requirements completed! Click Continue to proceed.")
-            else:
-                self.bot.answer_callback_query(call.id, "✅ WhatsApp confirmed! Join remaining channels to continue.")
-            return
-        
-        # ==================== End New Membership Callbacks ====================
-        
         # Handle admin callbacks
         if (data.startswith('admin_') or data.startswith('membership_')) and self.admin_instance:
             if self.is_admin(user_id):
@@ -2295,7 +2274,7 @@ class Handlers:
                 self.bot.answer_callback_query(call.id, texts.ERROR_PERMISSION)
             return
         
-        # Handle membership verification (legacy)
+        # Handle membership verification
         if data.startswith('verify_telegram_') or data.startswith('verify_whatsapp_'):
             if self.admin_instance:
                 self.admin_instance.handle_admin_callback(call)

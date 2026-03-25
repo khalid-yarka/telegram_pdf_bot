@@ -9,7 +9,7 @@ TOKEN = "6514233351:AAFMLJY1uEFDl2F5EBn0eBoWlYCnY_mmoJM"
 ADMIN_IDS = [2094426161]  # replace with your ID(s)
 
 # Admin WhatsApp number for support (without + for clickable link)
-ADMIN_WHATSAPP = "252906500599"
+ADMIN_WHATSAPP = "252906500000"
 
 # Database file path
 DATABASE_PATH = os.path.join(os.path.dirname(__file__), "instance", "bot.db")
