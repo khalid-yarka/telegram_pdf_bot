@@ -544,3 +544,72 @@ REFRESH_MEMBERSHIP_FAILED = "❌ Could not refresh. Please try again."
 ERROR_NOT_FOUND = "❌ **Not Found**"
 ERROR_PERMISSION = "❌ **Permission Denied** You don't have access to this."
 ERROR_GENERIC = "❌ **Error** Please try again later."
+
+# ==================== ADDITIONAL MEMBERSHIP TEXTS ====================
+
+MEMBERSHIP_NEXT_REQUIREMENT = (
+    "**Next Requirement:** {icon} **{name}**\n"
+    "🔗 **Link:** `{link}`\n"
+    "📝 **About:** {description}\n"
+)
+
+WHATSAPP_GROUP_HELP = (
+    "💡 **Why join?** This WhatsApp group is where we share updates, study tips, and connect with fellow students.\n"
+    "📞 **Admin Contact:** `{admin_whatsapp}` if you have issues joining.\n"
+)
+
+TELEGRAM_CHANNEL_HELP = (
+    "💡 **Why join?** This channel shares educational resources and important announcements.\n"
+)
+
+WHATSAPP_LINK_CONTEXT = (
+    "📝 **About this group:** {description}\n"
+)
+
+# ==================== BANNED USER TEXT ====================
+
+ACCOUNT_SUSPENDED_WITH_CONTACT = (
+    "🚫 **Account Suspended**\n\n"
+    "Your account has been suspended. Please contact the admin to resolve this issue.\n\n"
+    "📞 **Admin WhatsApp:** `{admin_whatsapp}`\n\n"
+    "Click the button below to message the admin."
+)
+
+# ==================== PDF APPROVAL TEXTS ====================
+
+PDF_APPROVED_NOTIFICATION = (
+    "✅ **Your PDF has been approved!**\n\n"
+    "📄 **File:** `{file_name}`\n"
+    "🆔 **ID:** `{pdf_id}`\n\n"
+    "It is now available for all users to search and download."
+)
+
+PDF_APPROVE_BUTTON = "✅ Approve PDF"
+PDF_APPROVED_SUCCESS = "✅ PDF approved and now public!"
+
+# ==================== SHARE WITH REFERRAL TEXTS ====================
+
+SHARE_PDF_WITH_REFERRAL = (
+    "🔗 **Share this PDF**\n\n"
+    "📄 **File:** `{pdf_id}`\n\n"
+    "Share this link with your friends:\n\n"
+    "`{share_link}`\n\n"
+    "When they register using this link, you'll get referral credit! 🎉"
+)
+
+# ==================== WHATSAPP REQUIREMENT ADD TEXTS ====================
+
+WHATSAPP_ADD_DESCRIPTION_PROMPT = (
+    "💡 **Tip:** Add a description to help users understand the purpose of this WhatsApp group.\n\n"
+    "📝 **Example:** 'This group is for sharing study tips and updates. Admin: @username'\n\n"
+    "Type `skip` to skip or **Cancel** to cancel."
+)
+
+WHATSAPP_DESCRIPTION_EXAMPLE = (
+    "This WhatsApp group is for students to share study resources, ask questions, and stay updated on new PDFs."
+)
+
+# ==================== ADMIN SETTINGS TEXTS ====================
+
+SETTING_TOGGLED = "✅ {setting_name} turned {status}"
+SETTING_UPDATED = "✅ {setting_name} set to {value}"

@@ -5,7 +5,7 @@ import sqlite3
 import json
 import os
 from contextlib import contextmanager
-from config import DATABASE_PATH, DEBUG, TAGS
+from config import DATABASE_PATH, DEBUG, TAGS, DEFAULT_SETTINGS
 from utils import get_current_time
 
 # Ensure instance directory exists
@@ -47,11 +47,13 @@ def init_db():
             )
         ''')
         
-        # Add last_active column if missing
+        # Add last_active column if missing (for existing databases)
         cursor.execute("PRAGMA table_info(users)")
         columns = [col[1] for col in cursor.fetchall()]
         if 'last_active' not in columns:
             cursor.execute('ALTER TABLE users ADD COLUMN last_active TIMESTAMP')
+        if 'referral_notified' not in columns:
+            cursor.execute('ALTER TABLE users ADD COLUMN referral_notified BOOLEAN DEFAULT 0')
         
         # PDFs table
         cursor.execute('''
@@ -158,7 +160,8 @@ def init_db():
                 last_checked TIMESTAMP,
                 is_member BOOLEAN DEFAULT 0,
                 FOREIGN KEY (user_id) REFERENCES users(user_id),
-                FOREIGN KEY (requirement_id) REFERENCES requirements(id)
+                FOREIGN KEY (requirement_id) REFERENCES requirements(id),
+                UNIQUE(user_id, requirement_id)
             )
         ''')
         
@@ -201,8 +204,16 @@ def init_db():
             )
         ''')
         
+        # Insert default settings if they don't exist
+        for key, value in DEFAULT_SETTINGS.items():
+            cursor.execute('''
+                INSERT OR IGNORE INTO bot_settings (setting_key, setting_value, description, updated_at)
+                VALUES (?, ?, ?, ?)
+            ''', (key, value, f"Default setting for {key}", get_current_time()))
+        
         if DEBUG:
             print("✅ Database tables created/verified successfully")
+            print(f"📊 Default settings initialized: {len(DEFAULT_SETTINGS)} settings")
 
 # ==================== USER FUNCTIONS ====================
 
@@ -781,11 +792,18 @@ def get_all_settings():
 # ==================== SQL EXECUTION ====================
 
 def execute_sql(sql):
+    """Execute SQL query with safety checks"""
     with get_db() as conn:
         cursor = conn.cursor()
         try:
+            # Only allow SELECT, UPDATE, INSERT, DELETE (no DROP, ALTER, etc)
+            sql_upper = sql.strip().upper()
+            allowed_commands = ['SELECT', 'UPDATE', 'INSERT', 'DELETE']
+            if not any(sql_upper.startswith(cmd) for cmd in allowed_commands):
+                return "⚠️ Only SELECT, UPDATE, INSERT, DELETE queries are allowed."
+            
             cursor.execute(sql)
-            if sql.strip().upper().startswith('SELECT'):
+            if sql_upper.startswith('SELECT'):
                 return cursor.fetchall()
             else:
                 conn.commit()

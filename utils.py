@@ -156,8 +156,8 @@ def create_search_tag_keyboard():
     )
     return markup
 
-def create_pdf_action_buttons(pdf_id, user_id, is_admin=False):
-    """Create inline keyboard for PDF actions with 2x2 grid layout"""
+def create_pdf_action_buttons(pdf_id, user_id, is_admin=False, is_approved=False):
+    """Create inline keyboard for PDF actions with approve button for pending PDFs"""
     import database as db
     
     markup = InlineKeyboardMarkup(row_width=2)
@@ -180,13 +180,15 @@ def create_pdf_action_buttons(pdf_id, user_id, is_admin=False):
     )
     
     if is_admin:
+        if not is_approved:
+            markup.add(InlineKeyboardButton("✅ Approve PDF", callback_data=f"approve_{pdf_id}"))
         markup.add(InlineKeyboardButton("🗑️ Delete", callback_data=f"delete_{pdf_id}"))
     
     return markup
 
 def create_share_buttons(pdf_id, user_id):
-    """Create share buttons for Telegram and WhatsApp"""
-    share_link = f"https://t.me/{BOT_USERNAME}?start=pdf_{pdf_id}"
+    """Create share buttons for Telegram and WhatsApp with embedded referral"""
+    share_link = f"https://t.me/{BOT_USERNAME}?start=pdf_{pdf_id}_ref_{user_id}"
     whatsapp_link = f"https://wa.me/?text={share_link.replace('&', '%26')}"
     
     markup = InlineKeyboardMarkup(row_width=2)
@@ -216,7 +218,7 @@ def create_help_buttons():
     """Create help menu buttons with contact admin"""
     markup = InlineKeyboardMarkup(row_width=1)
     markup.add(
-        InlineKeyboardButton(texts.BUTTON_CONTACT_ADMIN, url=f"https://wa.me/{ADMIN_WHATSAPP}")
+        InlineKeyboardButton(texts.BUTTON_CONTACT_ADMIN, url=f"https://wa.me/{ADMIN_WHATSAPP}?text=Hello, I need help with Ardayda Bot. My user ID is:")
     )
     return markup
 
@@ -303,49 +305,6 @@ def create_class_keyboard():
     markup.add(InlineKeyboardButton(texts.BUTTON_BACK, callback_data="back_school"))
     return markup
 
-def create_membership_verify_button(requirement_id, req_type):
-    """Create verification button for membership"""
-    markup = InlineKeyboardMarkup(row_width=1)
-    if req_type == 'telegram':
-        markup.add(
-            InlineKeyboardButton(texts.BUTTON_JOINED, callback_data=f"verify_telegram_{requirement_id}")
-        )
-    else:
-        markup.add(
-            InlineKeyboardButton(texts.BUTTON_VERIFY, callback_data=f"verify_whatsapp_{requirement_id}")
-        )
-    return markup
-
-# ==================== MEMBERSHIP KEYBOARD FUNCTIONS ====================
-
-def create_membership_telegram_button(requirement):
-    """Create a join button for Telegram channel/group"""
-    link = requirement['link']
-    if link.startswith('@'):
-        link = f"https://t.me/{link[1:]}"
-    elif not link.startswith('http'):
-        link = f"https://t.me/{link}"
-    
-    return InlineKeyboardButton(
-        f"📢 Join {requirement['name'][:20]}",
-        url=link
-    )
-
-def create_membership_whatsapp_buttons(requirement):
-    """Create buttons for WhatsApp group (join + confirm)"""
-    return [
-        InlineKeyboardButton(f"💬 Join {requirement['name'][:15]}", url=requirement['link']),
-        InlineKeyboardButton(f"✅ Confirm {requirement['name'][:10]}", callback_data=f"confirm_whatsapp_{requirement['id']}")
-    ]
-
-def create_membership_refresh_button():
-    """Create refresh status button"""
-    return InlineKeyboardButton("🔄 Refresh Status", callback_data="refresh_membership")
-
-def create_membership_continue_button():
-    """Create continue to main menu button"""
-    return InlineKeyboardButton("🎉 Continue to Main Menu", callback_data="membership_complete")
-
 def create_progress_bar(current, total, length=10):
     """Create a visual progress bar"""
     if total == 0:
@@ -355,56 +314,6 @@ def create_progress_bar(current, total, length=10):
     filled = int(length * percent / 100)
     bar = "█" * filled + "░" * (length - filled)
     return bar
-
-def format_membership_status_text(telegram_reqs, whatsapp_reqs, telegram_joined, whatsapp_joined):
-    """Format membership status text for display"""
-    total_telegram = len(telegram_reqs)
-    total_whatsapp = len(whatsapp_reqs)
-    total_joined = telegram_joined + whatsapp_joined
-    total_required = total_telegram + total_whatsapp
-    
-    if total_required == 0:
-        return "✅ No membership requirements. You have full access!"
-    
-    text = "🔐 **MEMBERSHIP REQUIREMENTS**\n"
-    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    
-    bar = create_progress_bar(total_joined, total_required)
-    percent = int((total_joined / total_required) * 100) if total_required > 0 else 0
-    text += f"**Progress:** `{bar}` {total_joined}/{total_required} ({percent}%)\n\n"
-    
-    if telegram_reqs:
-        text += "📢 **TELEGRAM CHANNELS/GROUPS** (Auto-detected)\n"
-        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        for req in telegram_reqs:
-            if req.get('is_member', False):
-                text += f"✅ **{req['name']}** - Joined\n"
-            else:
-                text += f"❌ **{req['name']}** - Not joined\n"
-                text += f"   🔗 `{req['link']}`\n"
-        text += "\n"
-    
-    if whatsapp_reqs:
-        text += "💬 **WHATSAPP GROUPS** (Confirm after joining)\n"
-        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        for req in whatsapp_reqs:
-            if req.get('is_member', False):
-                text += f"✅ **{req['name']}** - Confirmed\n"
-            else:
-                text += f"❌ **{req['name']}** - Not confirmed\n"
-                text += f"   🔗 `{req['link']}`\n"
-        text += "\n"
-    
-    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    
-    if total_joined == total_required:
-        text += "🎉 **Congratulations!** You've joined all required communities!\n"
-        text += "Click the button below to continue to the main menu.\n\n"
-    else:
-        text += "⚠️ **Please join all required channels/groups above** to access the bot.\n"
-        text += "For WhatsApp groups, click 'Confirm' after joining.\n\n"
-    
-    return text
 
 def get_pdf_emoji(tag):
     """Get emoji based on PDF tag for better visual"""

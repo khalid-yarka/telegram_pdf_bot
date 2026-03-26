@@ -76,7 +76,18 @@ class Handlers:
         """Get user or None if banned"""
         user = db.get_user(user_id)
         if user and user['is_banned']:
-            self.bot.send_message(user_id, texts.ACCOUNT_SUSPENDED)
+            # Send banned message with WhatsApp contact button
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton(
+                "📞 Contact Admin on WhatsApp", 
+                url=f"https://wa.me/{ADMIN_WHATSAPP}?text=Hello, I was banned from Ardayda Bot. My user ID is {user_id}. Please help me understand why."
+            ))
+            self.bot.send_message(
+                user_id, 
+                texts.ACCOUNT_SUSPENDED,
+                parse_mode='Markdown',
+                reply_markup=markup
+            )
             return None
         return user
     
@@ -116,19 +127,24 @@ class Handlers:
                 'total_whatsapp': 0,
                 'total_joined': 0,
                 'total_required': 0,
-                'all_joined': True
+                'all_joined': True,
+                'next_requirement': None
             }
         
         telegram_reqs = []
         whatsapp_reqs = []
         telegram_joined = 0
         whatsapp_joined = 0
+        first_missing = None
         
         for req in requirements:
             if req['type'] == 'telegram':
                 is_member = utils.is_telegram_member(self.bot, user_id, req['link'])
                 if is_member:
                     telegram_joined += 1
+                else:
+                    if first_missing is None:
+                        first_missing = req
                 telegram_reqs.append({
                     'id': req['id'],
                     'name': req['name'],
@@ -147,6 +163,9 @@ class Handlers:
                 })
                 if is_verified:
                     whatsapp_joined += 1
+                else:
+                    if first_missing is None:
+                        first_missing = req
         
         total_telegram = len(telegram_reqs)
         total_whatsapp = len(whatsapp_reqs)
@@ -162,7 +181,8 @@ class Handlers:
             'total_whatsapp': total_whatsapp,
             'total_joined': total_joined,
             'total_required': total_required,
-            'all_joined': (total_joined == total_required and total_required > 0) or total_required == 0
+            'all_joined': (total_joined == total_required and total_required > 0) or total_required == 0,
+            'next_requirement': first_missing
         }
     
     def format_membership_message(self, status):
@@ -181,29 +201,22 @@ class Handlers:
             bar = "█" * filled + "░" * (bar_length - filled)
             text += f"**Progress:** `{bar}` {status['total_joined']}/{status['total_required']} ({percent}%)\n\n"
         
-        # Telegram Channels
-        if status['telegram']:
-            text += "📢 **TELEGRAM CHANNELS/GROUPS** (Auto-detected)\n"
-            text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            for req in status['telegram']:
-                if req['is_member']:
-                    text += f"✅ **{req['name']}** - Joined\n"
-                else:
-                    text += f"❌ **{req['name']}** - Not joined\n"
-                    text += f"   🔗 `{req['link']}`\n"
+        # Show next requirement if not all joined
+        if not status['all_joined'] and status['next_requirement']:
+            req = status['next_requirement']
+            type_icon = "📢" if req['type'] == 'telegram' else "💬"
+            text += f"**Next Requirement:** {type_icon} **{req['name']}**\n"
+            text += f"🔗 **Link:** `{req['link']}`\n"
+            if req['description']:
+                text += f"📝 **About:** {req['description']}\n"
             text += "\n"
-        
-        # WhatsApp Groups
-        if status['whatsapp']:
-            text += "💬 **WHATSAPP GROUPS** (Confirm after joining)\n"
-            text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            for req in status['whatsapp']:
-                if req['is_member']:
-                    text += f"✅ **{req['name']}** - Confirmed\n"
-                else:
-                    text += f"❌ **{req['name']}** - Not confirmed\n"
-                    text += f"   🔗 `{req['link']}`\n"
-            text += "\n"
+            
+            # Add helpful reference text for WhatsApp links
+            if req['type'] == 'whatsapp':
+                text += "💡 **Why join?** This WhatsApp group is where we share updates, study tips, and connect with fellow students.\n"
+                text += f"📞 **Admin Contact:** `{ADMIN_WHATSAPP}` if you have issues joining.\n\n"
+            elif req['type'] == 'telegram':
+                text += "💡 **Why join?** This channel shares educational resources and important announcements.\n\n"
         
         text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         
@@ -211,18 +224,19 @@ class Handlers:
             text += "🎉 **Congratulations!** You've joined all required communities!\n"
             text += "Click the button below to continue to the main menu.\n\n"
         else:
-            text += "⚠️ **Please join all required channels/groups above** to access the bot.\n"
-            text += "For WhatsApp groups, click 'Confirm' after joining.\n\n"
+            text += "⚠️ **Please join the requirement above** to continue.\n"
+            text += "After joining, click the **Check Status** button.\n\n"
         
         return text
     
     def create_membership_keyboard(self, status):
-        """Create keyboard for membership requirements"""
-        markup = InlineKeyboardMarkup(row_width=2)
+        """Create keyboard for membership requirements - sequential flow"""
+        markup = InlineKeyboardMarkup(row_width=1)
         
-        # Add buttons for Telegram channels (auto-detect, just join links)
-        for req in status['telegram']:
-            if not req['is_member']:
+        if not status['all_joined'] and status['next_requirement']:
+            req = status['next_requirement']
+            
+            if req['type'] == 'telegram':
                 link = req['link']
                 if link.startswith('@'):
                     link = f"https://t.me/{link[1:]}"
@@ -230,32 +244,41 @@ class Handlers:
                     link = f"https://t.me/{link}"
                 
                 markup.add(InlineKeyboardButton(
-                    f"📢 Join {req['name'][:20]}",
+                    f"📢 Join {req['name'][:30]}",
                     url=link
                 ))
+            else:  # whatsapp
+                markup.add(InlineKeyboardButton(
+                    f"💬 Join {req['name'][:30]}",
+                    url=req['link']
+                ))
+                markup.add(InlineKeyboardButton(
+                    f"✅ I've Joined - Confirm",
+                    callback_data=f"confirm_whatsapp_{req['id']}"
+                ))
         
-        # Add buttons for WhatsApp groups
-        for req in status['whatsapp']:
-            if not req['is_member']:
-                markup.add(
-                    InlineKeyboardButton(f"💬 Join {req['name'][:15]}", url=req['link']),
-                    InlineKeyboardButton(f"✅ Confirm {req['name'][:10]}", callback_data=f"confirm_whatsapp_{req['id']}")
-                )
-        
-        # Refresh button
-        markup.add(InlineKeyboardButton("🔄 Refresh Status", callback_data="refresh_membership"))
+        # Always show check status button
+        markup.add(InlineKeyboardButton("🔄 Check Status", callback_data="refresh_membership"))
         
         # Continue button if all joined
         if status['all_joined'] and status['total_required'] > 0:
             markup.add(InlineKeyboardButton("🎉 Continue to Main Menu", callback_data="membership_complete"))
         
+        # Cancel button to go back
+        if status['total_required'] > 0:
+            markup.add(InlineKeyboardButton("❌ Cancel", callback_data="cancel"))
+        
         return markup
     
-    def show_membership_requirements(self, user_id, message_id=None):
-        """Show or update membership requirements message"""
+    def show_membership_requirements(self, user_id, message_id=None, pending_pdf=None):
+        """Show or update membership requirements message with sequential flow"""
         status = self.get_all_membership_status(user_id)
         text = self.format_membership_message(status)
         markup = self.create_membership_keyboard(status)
+        
+        # Store pending PDF if any
+        if pending_pdf:
+            db.set_user_state(user_id, 'pending_pdf_after_membership', {'pdf_id': pending_pdf})
         
         stored_message_id = db.get_user_membership_message(user_id)
         
@@ -272,6 +295,7 @@ class Handlers:
                     print(f"   Could not edit message, sending new: {e}")
         
         # Send new message
+        self.bot.send_message(user_id, "loading...",reply_markup=ReplyKeyboardRemove())
         msg = self.bot.send_message(
             user_id, text,
             parse_mode='Markdown', reply_markup=markup
@@ -297,7 +321,7 @@ class Handlers:
         
         db.set_user_membership_message(user_id, None)
         
-        # Show welcome message
+        # Show welcome message with remove keyboard
         user = db.get_user(user_id)
         welcome_text = (
             f"🎉 **WELCOME TO ARDAYDA BOT!** 🎉\n"
@@ -343,13 +367,13 @@ class Handlers:
                 is_member = utils.is_telegram_member(self.bot, user_id, req['link'])
                 db.record_membership(user_id, req['id'], is_member)
                 
-                if not is_member:
+                if not is_member and all_met:
                     all_met = False
                     missing_req = req
                     break
             else:
                 is_confirmed = db.get_whatsapp_confirmed(user_id)
-                if not is_confirmed:
+                if not is_confirmed and all_met:
                     all_met = False
                     missing_req = req
                     break
@@ -379,10 +403,6 @@ class Handlers:
             return func(message_or_call, *args, **kwargs)
         
         return wrapper
-    
-    def send_membership_required_message(self, user_id, requirement):
-        """Legacy method - replaced by show_membership_requirements"""
-        self.show_membership_requirements(user_id)
     
     def notify_referrer(self, referrer_id, new_user_id, new_user_name):
         """Notify the referrer that someone used their link"""
@@ -457,7 +477,13 @@ class Handlers:
             
             all_met, missing = self.check_all_memberships(user_id)
             if not all_met:
-                self.show_membership_requirements(user_id)
+                # Check if there's a pending PDF from the start param
+                pending_pdf = None
+                if start_param:
+                    if start_param.startswith('pdf_'):
+                        parts = start_param.split('_')
+                        pending_pdf = parts[1]
+                self.show_membership_requirements(user_id, pending_pdf=pending_pdf)
                 return
             
             if start_param and start_param.startswith('pdf_'):
@@ -473,34 +499,38 @@ class Handlers:
                 self.show_main_menu(user_id)
             return
 
-        # New user registration - handle both ref and pdf links as referrals
+        # New user registration - handle combined pdf + referral links
         referred_by = None
         pending_pdf = None
 
         if start_param:
-            if start_param.startswith('ref_'):
-                referrer_id = start_param.split('_')[1]
-                referrer = db.get_user(referrer_id)
-                if referrer and referrer['user_id'] != user_id:
-                    referred_by = referrer['user_id']
-                    self.bot.send_message(referrer_id, "**🚸 Someone Used Your Referral Link**", parse_mode='Markdown')
-                    if DEBUG:
-                        print(f"🔗 New user {user_id} referred by {referrer_id}")
-            
-            elif start_param.startswith('pdf_'):
-                # PDF share link - extract PDF ID and check for referral in extended format
+            # Check for combined format: pdf_123_ref_456
+            if start_param.startswith('pdf_') and 'ref_' in start_param:
                 parts = start_param.split('_')
-                pending_pdf = parts[1]
-                
-                # Check if referral is embedded (format: pdf_123_ref_456)
-                if len(parts) >= 4 and parts[2] == 'ref':
+                # Format: pdf_{pdf_id}_ref_{referrer_id}
+                if len(parts) >= 4:
+                    pending_pdf = parts[1]
                     referrer_id = parts[3]
                     referrer = db.get_user(referrer_id)
                     if referrer and referrer['user_id'] != user_id:
                         referred_by = referrer['user_id']
-                        self.bot.send_message(referrer_id, "**🚸 Someone Used Your PDF Share Link as Referral!**", parse_mode='Markdown')
                         if DEBUG:
-                            print(f"🔗 New user {user_id} referred by {referrer_id} via PDF link")
+                            print(f"🔗 New user {user_id} referred by {referrer_id} via combined PDF+ref link")
+            
+            # Check for PDF only link
+            elif start_param.startswith('pdf_'):
+                pending_pdf = start_param.split('_')[1]
+                if DEBUG:
+                    print(f"📄 New user {user_id} came from PDF link: {pending_pdf}")
+            
+            # Check for referral only link
+            elif start_param.startswith('ref_'):
+                referrer_id = start_param.split('_')[1]
+                referrer = db.get_user(referrer_id)
+                if referrer and referrer['user_id'] != user_id:
+                    referred_by = referrer['user_id']
+                    if DEBUG:
+                        print(f"🔗 New user {user_id} referred by {referrer_id}")
 
         db.set_user_state(user_id, 'register', {
             'step': 'name',
@@ -508,10 +538,12 @@ class Handlers:
             'pending_pdf': pending_pdf
         })
         
+        #  any existing keyboard
         self.bot.send_message(
             user_id, 
             texts.REG_NAME, 
-            parse_mode='Markdown'
+            parse_mode='Markdown',
+            reply_markup=ReplyKeyboardRemove()
         )
         
         if DEBUG:
@@ -542,7 +574,7 @@ class Handlers:
         user = db.get_user(user_id)
         
         if user and user['is_banned']:
-            self.bot.send_message(user_id, texts.ACCOUNT_SUSPENDED)
+            self.get_user_or_none(user_id)
             return
         
         if not user:
@@ -593,7 +625,7 @@ class Handlers:
         user = db.get_user(user_id)
         
         if user and user['is_banned']:
-            self.bot.send_message(user_id, texts.ACCOUNT_SUSPENDED)
+            self.get_user_or_none(user_id)
             return
         
         if user and not user['is_banned']:
@@ -1116,10 +1148,7 @@ class Handlers:
         all_met, missing = self.check_all_memberships(user_id)
         
         if not all_met:
-            # Store pending PDF to show after membership
-            if pending_pdf:
-                db.set_user_state(user_id, 'pending_pdf_after_membership', {'pdf_id': pending_pdf})
-            self.show_membership_requirements(user_id)
+            self.show_membership_requirements(user_id, pending_pdf=pending_pdf)
         else:
             self.show_main_menu(user_id)
             if pending_pdf:
@@ -1617,10 +1646,52 @@ class Handlers:
             likes=pdf['like_count']
         )
         
-        markup = utils.create_pdf_action_buttons(pdf_id, user_id, self.is_admin(user_id))
+        # Add pending status if not approved
+        if not pdf['is_approved']:
+            text += f"\n⏳ **Status:** Pending Approval"
+        
+        markup = utils.create_pdf_action_buttons(pdf_id, user_id, self.is_admin(user_id), pdf['is_approved'])
         
         self.bot.edit_message_text(text, user_id, call.message.message_id, parse_mode='Markdown', reply_markup=markup)
         self.bot.answer_callback_query(call.id)
+        
+    def handle_approve_pdf_callback(self, call):
+        """Handle PDF approval from pending view"""
+        user_id = call.from_user.id
+        if not self.is_admin(user_id):
+            self.bot.answer_callback_query(call.id, texts.ERROR_PERMISSION)
+            return
+        
+        # FIXED: callback data format is "approve_{pdf_id}" so index 1 contains the pdf_id
+        pdf_id = int(call.data.split('_')[1])
+        pdf = db.get_pdf(pdf_id)
+        
+        if not pdf:
+            self.bot.answer_callback_query(call.id, texts.ERROR_NOT_FOUND)
+            return
+        
+        db.approve_pdf(pdf_id)
+        
+        # Notify uploader
+        uploader = db.get_user(pdf['uploaded_by'])
+        if uploader:
+            try:
+                self.bot.send_message(
+                    uploader['user_id'],
+                    f"✅ **Your PDF has been approved!**\n\n"
+                    f"📄 **File:** `{pdf['file_name']}`\n"
+                    f"🆔 **ID:** `{pdf_id}`\n\n"
+                    f"It is now available for all users to search and download.",
+                    parse_mode='Markdown'
+                )
+            except:
+                pass
+        
+        self.bot.answer_callback_query(call.id, "✅ PDF approved and now public!")
+        
+        # Refresh the view
+        self.handle_view_pdf_callback(call)
+    
     
     def handle_download_callback(self, call):
         user_id = call.from_user.id
@@ -1685,7 +1756,10 @@ class Handlers:
                 likes=pdf['like_count']
             )
             
-            markup = utils.create_pdf_action_buttons(pdf_id, user_id, self.is_admin(user_id))
+            if not pdf['is_approved']:
+                text += f"\n⏳ **Status:** Pending Approval"
+            
+            markup = utils.create_pdf_action_buttons(pdf_id, user_id, self.is_admin(user_id), pdf['is_approved'])
             
             try:
                 self.bot.edit_message_text(text, user_id, call.message.message_id, parse_mode='Markdown', reply_markup=markup)
@@ -1710,9 +1784,33 @@ class Handlers:
         user_id = call.from_user.id
         pdf_id = int(call.data.split('_')[1])
         
-        markup = utils.create_share_buttons(pdf_id, user_id)
+        # Create share link with embedded referral if user is registered
+        user = db.get_user(user_id)
+        if user:
+            share_link = f"https://t.me/{BOT_USERNAME}?start=pdf_{pdf_id}_ref_{user_id}"
+        else:
+            share_link = f"https://t.me/{BOT_USERNAME}?start=pdf_{pdf_id}"
         
-        self.bot.edit_message_reply_markup(user_id, call.message.message_id, reply_markup=markup)
+        whatsapp_link = f"https://wa.me/?text={share_link.replace('&', '%26')}"
+        
+        markup = InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            InlineKeyboardButton(texts.BUTTON_SHARE_TELEGRAM, url=f"https://t.me/share/url?url={share_link}&text=📚 Check out this PDF!"),
+            InlineKeyboardButton(texts.BUTTON_SHARE_WHATSAPP, url=whatsapp_link)
+        )
+        markup.add(InlineKeyboardButton(texts.BUTTON_BACK, callback_data=f"view_{pdf_id}"))
+        
+        self.bot.edit_message_text(
+            f"🔗 **Share this PDF**\n\n"
+            f"📄 **File:** `{pdf_id}`\n\n"
+            f"Share this link with your friends:\n\n"
+            f"`{share_link}`\n\n"
+            f"When they register using this link, you'll get referral credit! 🎉",
+            user_id,
+            call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=markup
+        )
         self.bot.answer_callback_query(call.id)
     
     def handle_report_state(self, message, data):
@@ -1899,7 +1997,7 @@ class Handlers:
                 user_id,
                 "📚 **Shared PDF**\n\nPlease register first to view this PDF.",
                 parse_mode='Markdown',
-                reply_markup=utils.create_cancel_keyboard()
+                reply_markup=ReplyKeyboardRemove()
             )
             self.bot.send_message(user_id, texts.REG_NAME, parse_mode='Markdown')
         else:
@@ -1913,7 +2011,7 @@ class Handlers:
                 downloads=pdf['download_count'],
                 likes=pdf['like_count']
             )
-            markup = utils.create_pdf_action_buttons(pdf_id, user_id, self.is_admin(user_id))
+            markup = utils.create_pdf_action_buttons(pdf_id, user_id, self.is_admin(user_id), pdf['is_approved'])
             self.bot.send_message(user_id, text, parse_mode='Markdown', reply_markup=markup)
     
     # ==================== Admin Broadcast & SQL ====================
@@ -1944,7 +2042,7 @@ class Handlers:
         )
         
         if show_admin_name and admin_name:
-            broadcast_message += f"👤 **Sent by:** {admin_name}\n"
+            broadcast_message += f"👤 **Sent by:** {admin_name.split()[0]}\n"
         
         broadcast_message += f"📅 **Date:** {get_current_time().strftime('%Y-%m-%d %I:%M %p')}\n\n"
         broadcast_message += f"_To reply, click the button below_"
@@ -2112,7 +2210,6 @@ class Handlers:
             return False
     
     # ==================== Callback Handler Router ====================
-    
     def handle_callbacks(self, call):
         user_id = call.from_user.id
         user = db.get_user(user_id)
@@ -2140,6 +2237,123 @@ class Handlers:
             self.bot.answer_callback_query(call.id)
             return
         
+        # ==================== IMPORTANT: ORDER MATTERS ====================
+        # Settings callbacks - MUST come before admin callbacks
+        if data.startswith("setting_"):
+            if self.admin_instance and self.admin_instance.is_admin(user_id):
+                self.admin_instance.handle_admin_callback(call)
+            else:
+                self.bot.answer_callback_query(call.id, texts.ERROR_PERMISSION)
+            return
+        
+        # Admin callbacks
+        if data.startswith('admin_') or data.startswith('membership_'):
+            if self.admin_instance and self.admin_instance.is_admin(user_id):
+                self.admin_instance.handle_admin_callback(call)
+            else:
+                self.bot.answer_callback_query(call.id, texts.ERROR_PERMISSION)
+            return
+        
+        # Approve PDF callback - MUST come before view_
+        if data.startswith('approve_'):
+            self.handle_approve_pdf_callback(call)
+            return
+        
+        # PDF action callbacks
+        if data.startswith('view_'):
+            self.handle_view_pdf_callback(call)
+            return
+        
+        if data.startswith('download_'):
+            self.handle_download_callback(call)
+            return
+        
+        if data.startswith('like_') or data.startswith('unlike_'):
+            self.handle_like_callback(call)
+            return
+        
+        if data.startswith('report_'):
+            self.handle_report_callback(call)
+            return
+        
+        if data.startswith('share_'):
+            self.handle_share_callback(call)
+            return
+        
+        # Resolve report callback
+        if data.startswith('resolve_report_'):
+            if self.admin_instance and self.admin_instance.is_admin(user_id):
+                self.admin_instance.handle_admin_callback(call)
+            else:
+                self.bot.answer_callback_query(call.id, texts.ERROR_PERMISSION)
+            return
+        
+        # Delete PDF callbacks
+        if data.startswith("delete_"):
+            pdf_id = int(data.split("_")[1])
+            if self.admin_instance:
+                self.admin_instance.delete_pdf(user_id, pdf_id, call.message.message_id)
+            self.bot.answer_callback_query(call.id)
+            return
+        
+        if data.startswith("confirm_delete_"):
+            pdf_id = int(data.split("_")[2])
+            if self.admin_instance:
+                self.admin_instance.confirm_delete_pdf(user_id, pdf_id, call.message.message_id)
+            self.bot.answer_callback_query(call.id)
+            return
+        
+        # Membership callbacks
+        if data == "refresh_membership":
+            # Check all memberships again
+            all_met, missing = self.check_all_memberships(user_id)
+            if all_met:
+                self.complete_membership(user_id)
+                self.bot.answer_callback_query(call.id, "✅ All requirements completed! Welcome!")
+            else:
+                # Show updated requirements with next requirement
+                self.show_membership_requirements(user_id)
+                self.bot.answer_callback_query(call.id, "✅ Status refreshed! Please join the requirement above.")
+            return
+        
+        if data == "membership_complete":
+            self.complete_membership(user_id)
+            self.bot.answer_callback_query(call.id, "🎉 Welcome to Ardayda Bot!")
+            return
+        
+        if data.startswith("confirm_whatsapp_"):
+            req_id = int(data.split("_")[2])
+            db.set_whatsapp_confirmed(user_id, True)
+            db.log_membership_event(user_id, req_id, 'confirm_whatsapp')
+            
+            # Re-check memberships after confirmation
+            all_met, missing = self.check_all_memberships(user_id)
+            if all_met:
+                self.bot.answer_callback_query(call.id, "✅ All requirements completed! Click Continue to proceed.")
+                self.show_membership_requirements(user_id)
+            else:
+                self.bot.answer_callback_query(call.id, "✅ WhatsApp confirmed! Please join the next requirement.")
+                self.show_membership_requirements(user_id)
+            return
+        
+        # Reply to admin
+        if data.startswith("reply_to_admin_"):
+            admin_id = int(data.split("_")[3])
+            self.start_reply_to_admin(user_id, admin_id, call.message.message_id)
+            self.bot.answer_callback_query(call.id)
+            return
+        
+        # Admin reply to user
+        if data.startswith("admin_reply_user_"):
+            if self.is_admin(user_id) and self.admin_instance:
+                target_user_id = int(data.split("_")[3])
+                self.admin_instance.start_admin_reply_to_user(user_id, target_user_id, call.message.message_id)
+                self.bot.answer_callback_query(call.id)
+            else:
+                self.bot.answer_callback_query(call.id, texts.ERROR_PERMISSION)
+            return
+        
+        # Confirm upload
         if data == "confirm_upload":
             current_state, pending_data = db.get_user_state(user_id)
             if current_state == 'pending_upload' and pending_data:
@@ -2155,6 +2369,7 @@ class Handlers:
                 self.bot.answer_callback_query(call.id, "Session expired. Please start again.")
             return
         
+        # Share referral
         if data == "share_referral":
             self.show_referral_share(user_id, call.message.message_id)
             self.bot.answer_callback_query(call.id)
@@ -2225,97 +2440,6 @@ class Handlers:
         
         if data in ["search_next", "search_prev", "search_new"]:
             self.handle_search_navigation(call)
-            return
-        
-        # PDF action callbacks
-        if data.startswith('view_'):
-            self.handle_view_pdf_callback(call)
-            return
-        
-        if data.startswith('download_'):
-            self.handle_download_callback(call)
-            return
-        
-        if data.startswith('like_') or data.startswith('unlike_'):
-            self.handle_like_callback(call)
-            return
-        
-        if data.startswith('report_'):
-            self.handle_report_callback(call)
-            return
-        
-        if data.startswith('share_'):
-            self.handle_share_callback(call)
-            return
-        
-        # Delete PDF callbacks
-        if data.startswith("delete_"):
-            pdf_id = int(data.split("_")[1])
-            if self.admin_instance:
-                self.admin_instance.delete_pdf(user_id, pdf_id, call.message.message_id)
-            self.bot.answer_callback_query(call.id)
-            return
-        
-        if data.startswith("confirm_delete_"):
-            pdf_id = int(data.split("_")[2])
-            if self.admin_instance:
-                self.admin_instance.confirm_delete_pdf(user_id, pdf_id, call.message.message_id)
-            self.bot.answer_callback_query(call.id)
-            return
-        
-        # Membership callbacks
-        if data == "refresh_membership":
-            self.show_membership_requirements(user_id)
-            self.bot.answer_callback_query(call.id, "✅ Status refreshed!")
-            return
-        
-        if data == "membership_complete":
-            self.complete_membership(user_id)
-            self.bot.answer_callback_query(call.id, "🎉 Welcome to Ardayda Bot!")
-            return
-        
-        if data.startswith("confirm_whatsapp_"):
-            req_id = int(data.split("_")[2])
-            db.set_whatsapp_confirmed(user_id, True)
-            db.log_membership_event(user_id, req_id, 'confirm_whatsapp')
-            self.show_membership_requirements(user_id)
-            
-            status = self.get_all_membership_status(user_id)
-            if status['all_joined']:
-                self.bot.answer_callback_query(call.id, "✅ All requirements completed! Click Continue to proceed.")
-            else:
-                self.bot.answer_callback_query(call.id, "✅ WhatsApp confirmed! Join remaining channels to continue.")
-            return
-        
-        # Admin callbacks
-        if (data.startswith('admin_') or data.startswith('membership_')) and self.admin_instance:
-            if self.is_admin(user_id):
-                self.admin_instance.handle_admin_callback(call)
-            else:
-                self.bot.answer_callback_query(call.id, texts.ERROR_PERMISSION)
-            return
-        
-        # Reply to admin
-        if data.startswith("reply_to_admin_"):
-            admin_id = int(data.split("_")[3])
-            self.start_reply_to_admin(user_id, admin_id, call.message.message_id)
-            self.bot.answer_callback_query(call.id)
-            return
-        
-        # Admin reply to user
-        if data.startswith("admin_reply_user_"):
-            if self.is_admin(user_id) and self.admin_instance:
-                target_user_id = int(data.split("_")[3])
-                self.admin_instance.start_admin_reply_to_user(user_id, target_user_id, call.message.message_id)
-                self.bot.answer_callback_query(call.id)
-            else:
-                self.bot.answer_callback_query(call.id, texts.ERROR_PERMISSION)
-            return
-        
-        # Legacy membership verification
-        if data.startswith('verify_telegram_') or data.startswith('verify_whatsapp_'):
-            if self.admin_instance:
-                self.admin_instance.handle_admin_callback(call)
             return
         
         self.bot.answer_callback_query(call.id, "Unknown action")
