@@ -162,8 +162,6 @@ def init_db():
             )
         ''')
         
-        # ==================== NEW TABLES ====================
-        
         # User membership tracking table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_membership (
@@ -190,9 +188,21 @@ def init_db():
             )
         ''')
         
+        # Bot settings table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                setting_key TEXT UNIQUE,
+                setting_value TEXT,
+                description TEXT,
+                updated_at TIMESTAMP,
+                updated_by INTEGER,
+                FOREIGN KEY (updated_by) REFERENCES users(user_id)
+            )
+        ''')
+        
         if DEBUG:
             print("✅ Database tables created/verified successfully")
-
 
 # ==================== USER FUNCTIONS ====================
 
@@ -203,11 +213,9 @@ def add_user(user_id, full_name, phone=None, region=None, school=None, class_nam
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Check if user exists
         existing = cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
         
         if existing:
-            # Update existing user with last_active
             cursor.execute('''
                 UPDATE users SET
                     full_name = COALESCE(?, full_name),
@@ -221,9 +229,8 @@ def add_user(user_id, full_name, phone=None, region=None, school=None, class_nam
             
             if DEBUG:
                 print(f"📝 User updated: {user_id} - {full_name}")
-            return None  # No referral notification for updates
+            return None
         
-        # Insert new user
         cursor.execute('''
             INSERT INTO users 
             (user_id, full_name, phone, region, school, class, join_date, last_active, is_banned, is_admin, referred_by, referral_notified)
@@ -235,10 +242,9 @@ def add_user(user_id, full_name, phone=None, region=None, school=None, class_nam
             if referred_by:
                 print(f"🔗 Referred by: {referred_by}")
         
-        return referred_by  # Return referrer ID for notification
+        return referred_by
 
 def update_user_activity(user_id):
-    """Update user's last active timestamp"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('UPDATE users SET last_active = ? WHERE user_id = ?', (get_current_time(), user_id))
@@ -312,7 +318,6 @@ def get_user_upload_count(user_id):
         return cursor.fetchone()[0]
 
 def get_user_referral_stats(user_id):
-    """Get referral stats for a user"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT COUNT(*) FROM users WHERE referred_by = ?', (user_id,))
@@ -320,13 +325,11 @@ def get_user_referral_stats(user_id):
         return {'conversions': conversions}
 
 def mark_referral_notified(user_id):
-    """Mark that referrer has been notified about a new referral"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('UPDATE users SET referral_notified = 1 WHERE user_id = ?', (user_id,))
 
 def get_referrer_notification_status(user_id):
-    """Check if referrer has been notified about latest referral"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT referral_notified FROM users WHERE user_id = ?', (user_id,))
@@ -334,24 +337,20 @@ def get_referrer_notification_status(user_id):
         return row['referral_notified'] == 1 if row else False
 
 def get_user_activity_stats(user_id):
-    """Get user activity stats: days since join, last active, etc."""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT join_date, last_active FROM users WHERE user_id = ?', (user_id,))
         row = cursor.fetchone()
         if row:
-            join_date = row['join_date']
-            last_active = row['last_active']
             return {
-                'join_date': join_date,
-                'last_active': last_active
+                'join_date': row['join_date'],
+                'last_active': row['last_active']
             }
         return None
 
 # ==================== PDF FUNCTIONS ====================
 
 def add_pdf(file_id, file_name, user_id, subject, tag, exam_year=None):
-    """Add PDF without file_size"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('''
@@ -656,10 +655,8 @@ def get_stats():
 # ==================== MEMBERSHIP TRACKING FUNCTIONS ====================
 
 def set_user_membership_message(user_id, message_id):
-    """Store membership message ID for a user"""
     with get_db() as conn:
         cursor = conn.cursor()
-        # Check if record exists
         cursor.execute('SELECT user_id FROM user_membership WHERE user_id = ?', (user_id,))
         exists = cursor.fetchone()
         
@@ -676,7 +673,6 @@ def set_user_membership_message(user_id, message_id):
             ''', (user_id, message_id, get_current_time()))
 
 def get_user_membership_message(user_id):
-    """Get stored membership message ID"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT membership_message_id FROM user_membership WHERE user_id = ?', (user_id,))
@@ -684,10 +680,8 @@ def get_user_membership_message(user_id):
         return row['membership_message_id'] if row else None
 
 def set_whatsapp_confirmed(user_id, confirmed=True):
-    """Mark WhatsApp confirmation status"""
     with get_db() as conn:
         cursor = conn.cursor()
-        # Check if record exists
         cursor.execute('SELECT user_id FROM user_membership WHERE user_id = ?', (user_id,))
         exists = cursor.fetchone()
         
@@ -704,7 +698,6 @@ def set_whatsapp_confirmed(user_id, confirmed=True):
             ''', (user_id, 1 if confirmed else 0, get_current_time()))
 
 def get_whatsapp_confirmed(user_id):
-    """Get WhatsApp confirmation status"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT whatsapp_confirmed FROM user_membership WHERE user_id = ?', (user_id,))
@@ -712,7 +705,6 @@ def get_whatsapp_confirmed(user_id):
         return row['whatsapp_confirmed'] == 1 if row else False
 
 def increment_whatsapp_reminder(user_id):
-    """Increment WhatsApp reminder count"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT user_id FROM user_membership WHERE user_id = ?', (user_id,))
@@ -731,7 +723,6 @@ def increment_whatsapp_reminder(user_id):
             ''', (user_id, get_current_time()))
 
 def get_whatsapp_reminder_count(user_id):
-    """Get WhatsApp reminder count"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT whatsapp_reminder_count FROM user_membership WHERE user_id = ?', (user_id,))
@@ -739,7 +730,6 @@ def get_whatsapp_reminder_count(user_id):
         return row['whatsapp_reminder_count'] if row else 0
 
 def log_membership_event(user_id, requirement_id, event_type):
-    """Log membership event for admin monitoring"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('''
@@ -748,7 +738,6 @@ def log_membership_event(user_id, requirement_id, event_type):
         ''', (user_id, requirement_id, event_type, get_current_time()))
 
 def get_recent_membership_events(limit=20):
-    """Get recent membership events for admin monitoring"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('''
@@ -761,82 +750,33 @@ def get_recent_membership_events(limit=20):
         ''', (limit,))
         return cursor.fetchall()
 
-def get_membership_stats_by_requirement(requirement_id=None):
-    """Get membership statistics for a specific requirement or all"""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        if requirement_id:
-            cursor.execute('''
-                SELECT 
-                    COUNT(DISTINCT u.user_id) as total_users,
-                    COUNT(DISTINCT CASE WHEN m.is_member = 1 THEN u.user_id END) as members,
-                    COUNT(DISTINCT CASE WHEN m.is_member = 0 THEN u.user_id END) as non_members
-                FROM users u
-                LEFT JOIN memberships m ON u.user_id = m.user_id AND m.requirement_id = ?
-            ''', (requirement_id,))
-        else:
-            cursor.execute('''
-                SELECT r.id, r.name, r.type, r.link,
-                       COUNT(DISTINCT u.user_id) as total_users,
-                       COUNT(DISTINCT CASE WHEN m.is_member = 1 THEN u.user_id END) as members,
-                       COUNT(DISTINCT CASE WHEN m.is_member = 0 THEN u.user_id END) as non_members
-                FROM requirements r
-                CROSS JOIN users u
-                LEFT JOIN memberships m ON u.user_id = m.user_id AND r.id = m.requirement_id
-                WHERE r.is_active = 1
-                GROUP BY r.id
-            ''')
-        return cursor.fetchall()
+# ==================== SETTINGS FUNCTIONS ====================
 
-def get_membership_completion_stats():
-    """Get overall membership completion statistics"""
+def get_setting(key, default=None):
+    """Get a setting value from database"""
     with get_db() as conn:
         cursor = conn.cursor()
-        requirements = get_requirements(active_only=True)
-        
-        if not requirements:
-            return {'total_users': 0, 'completed': 0, 'partial': 0, 'none': 0}
-        
-        users = get_all_users()
-        completed = 0
-        partial = 0
-        none = 0
-        
-        for user in users:
-            all_joined = True
-            any_joined = False
-            
-            for req in requirements:
-                if req['type'] == 'telegram':
-                    # For Telegram, we need to check membership
-                    # This is a simplified version - actual check needs bot instance
-                    # For stats, we use recorded memberships
-                    membership = cursor.execute('''
-                        SELECT is_member FROM memberships 
-                        WHERE user_id = ? AND requirement_id = ?
-                    ''', (user['user_id'], req['id'])).fetchone()
-                    is_member = membership['is_member'] == 1 if membership else False
-                else:
-                    is_member = get_whatsapp_confirmed(user['user_id'])
-                
-                if is_member:
-                    any_joined = True
-                else:
-                    all_joined = False
-            
-            if all_joined and any_joined:
-                completed += 1
-            elif any_joined:
-                partial += 1
-            else:
-                none += 1
-        
-        return {
-            'total_users': len(users),
-            'completed': completed,
-            'partial': partial,
-            'none': none
-        }
+        cursor.execute('SELECT setting_value FROM bot_settings WHERE setting_key = ?', (key,))
+        row = cursor.fetchone()
+        if row:
+            return row['setting_value']
+        return default
+
+def set_setting(key, value, description=None, updated_by=None):
+    """Set a setting value in database"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO bot_settings (setting_key, setting_value, description, updated_at, updated_by)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (key, value, description, get_current_time(), updated_by))
+
+def get_all_settings():
+    """Get all settings"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM bot_settings ORDER BY setting_key')
+        return cursor.fetchall()
 
 # ==================== SQL EXECUTION ====================
 

@@ -6,7 +6,7 @@ import os
 TOKEN = "6514233351:AAFMLJY1uEFDl2F5EBn0eBoWlYCnY_mmoJM"
 
 # Admin Telegram user IDs (list of integers)
-ADMIN_IDS = [2094426161]  # replace with your ID(s)
+ADMIN_IDS = [2094426161]
 
 # Admin WhatsApp number for support (without + for clickable link)
 ADMIN_WHATSAPP = "252906500000"
@@ -15,9 +15,9 @@ ADMIN_WHATSAPP = "252906500000"
 DATABASE_PATH = os.path.join(os.path.dirname(__file__), "instance", "bot.db")
 
 # No file size limit - set to None or very large
-MAX_FILE_SIZE = None  # No size limit for PDF uploads
+MAX_FILE_SIZE = None
 
-# Complete Tags definitions - all in one place
+# Complete Tags definitions
 TAGS = [
     "Q/A",
     "Book",
@@ -59,3 +59,21 @@ REQUIRED_CHANNEL = "Ardayda_channel"
 
 # Debug mode
 DEBUG = True
+
+# ==================== DEFAULT SETTINGS ====================
+# These will be inserted into database on first run
+
+DEFAULT_SETTINGS = {
+    'auto_approve_pdfs': '0',
+    'notify_admin_on_upload': '1',
+    'membership_required': '1',
+    'whatsapp_required': '1',
+    'whatsapp_reminders': '3',
+    'broadcast_enabled': '1',
+    'show_admin_name_in_broadcast': '1',
+    'search_results_per_page': '5',
+    'show_uploader_in_search': '1',
+    'welcome_message_enabled': '1',
+    'channel_leave_alert': '1',
+    'allow_user_delete_pdf': '0',
+}

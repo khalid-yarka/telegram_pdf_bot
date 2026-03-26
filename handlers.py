@@ -9,6 +9,7 @@ import texts
 import utils
 import pytz
 import sqlite3
+import json
 from datetime import datetime, timedelta
 from utils import get_current_time
 
@@ -169,7 +170,7 @@ class Handlers:
         if status['total_required'] == 0:
             return "✅ No membership requirements. You have full access!"
         
-        text = "🔐 *MEMBERSHIP REQUIREMENTS*\n"
+        text = "🔐 **MEMBERSHIP REQUIREMENTS**\n"
         text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         
         # Progress bar
@@ -178,39 +179,39 @@ class Handlers:
             bar_length = 10
             filled = int(bar_length * percent / 100)
             bar = "█" * filled + "░" * (bar_length - filled)
-            text += f"*Progress:* `{bar}` {status['total_joined']}/{status['total_required']} ({percent}%)\n\n"
+            text += f"**Progress:** `{bar}` {status['total_joined']}/{status['total_required']} ({percent}%)\n\n"
         
         # Telegram Channels
         if status['telegram']:
-            text += "📢 *TELEGRAM CHANNELS/GROUPS* (Auto-detected)\n"
+            text += "📢 **TELEGRAM CHANNELS/GROUPS** (Auto-detected)\n"
             text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             for req in status['telegram']:
                 if req['is_member']:
-                    text += f"✅ *{req['name']}* - Joined\n"
+                    text += f"✅ **{req['name']}** - Joined\n"
                 else:
-                    text += f"❌ *{req['name']}* - Not joined\n"
+                    text += f"❌ **{req['name']}** - Not joined\n"
                     text += f"   🔗 `{req['link']}`\n"
             text += "\n"
         
         # WhatsApp Groups
         if status['whatsapp']:
-            text += "💬 *WHATSAPP GROUPS* (Confirm after joining)\n"
+            text += "💬 **WHATSAPP GROUPS** (Confirm after joining)\n"
             text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             for req in status['whatsapp']:
                 if req['is_member']:
-                    text += f"✅ *{req['name']}* - Confirmed\n"
+                    text += f"✅ **{req['name']}** - Confirmed\n"
                 else:
-                    text += f"❌ *{req['name']}* - Not confirmed\n"
+                    text += f"❌ **{req['name']}** - Not confirmed\n"
                     text += f"   🔗 `{req['link']}`\n"
             text += "\n"
         
         text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         
         if status['all_joined']:
-            text += "🎉 *Congratulations!* You've joined all required communities!\n"
+            text += "🎉 **Congratulations!** You've joined all required communities!\n"
             text += "Click the button below to continue to the main menu.\n\n"
         else:
-            text += "⚠️ *Please join all required channels/groups above* to access the bot.\n"
+            text += "⚠️ **Please join all required channels/groups above** to access the bot.\n"
             text += "For WhatsApp groups, click 'Confirm' after joining.\n\n"
         
         return text
@@ -222,7 +223,6 @@ class Handlers:
         # Add buttons for Telegram channels (auto-detect, just join links)
         for req in status['telegram']:
             if not req['is_member']:
-                # Format link properly
                 link = req['link']
                 if link.startswith('@'):
                     link = f"https://t.me/{link[1:]}"
@@ -270,7 +270,6 @@ class Handlers:
             except Exception as e:
                 if DEBUG:
                     print(f"   Could not edit message, sending new: {e}")
-                # Message deleted or error, send new
         
         # Send new message
         msg = self.bot.send_message(
@@ -281,6 +280,13 @@ class Handlers:
     
     def complete_membership(self, user_id):
         """Complete membership and show welcome message"""
+        # Check for pending PDF after membership
+        state, pending_data = db.get_user_state(user_id)
+        pending_pdf = None
+        if state == 'pending_pdf_after_membership' and pending_data:
+            pending_pdf = pending_data.get('pdf_id')
+            db.clear_user_state(user_id)
+        
         # Delete membership message
         stored_message_id = db.get_user_membership_message(user_id)
         if stored_message_id:
@@ -289,15 +295,14 @@ class Handlers:
             except:
                 pass
         
-        # Clear membership message ID
         db.set_user_membership_message(user_id, None)
         
         # Show welcome message
         user = db.get_user(user_id)
         welcome_text = (
-            f"🎉 *WELCOME TO ARDAYDA BOT!* 🎉\n"
+            f"🎉 **WELCOME TO ARDAYDA BOT!** 🎉\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"Thank you for joining all our communities, *{user['full_name'].split()[0] if user['full_name'] else 'User'}*!\n\n"
+            f"Thank you for joining all our communities, **{user['full_name'].split()[0] if user['full_name'] else 'User'}**!\n\n"
             f"✅ You now have full access to:\n"
             f"├ 📤 Upload PDFs\n"
             f"├ 🔍 Search Educational Materials\n"
@@ -311,6 +316,10 @@ class Handlers:
             parse_mode='Markdown',
             reply_markup=utils.create_main_menu_keyboard(user_id)
         )
+        
+        # Show pending PDF if any
+        if pending_pdf:
+            self.handle_pdf_share(user_id, pending_pdf)
         
         if DEBUG:
             print(f"🎉 Membership completed for user {user_id}")
@@ -326,11 +335,9 @@ class Handlers:
         missing_req = None
         status = self.get_all_membership_status(user_id)
         
-        # If all joined, return True
         if status['all_joined']:
             return True, None
         
-        # Find first missing requirement
         for req in requirements:
             if req['type'] == 'telegram':
                 is_member = utils.is_telegram_member(self.bot, user_id, req['link'])
@@ -340,7 +347,7 @@ class Handlers:
                     all_met = False
                     missing_req = req
                     break
-            else:  # whatsapp
+            else:
                 is_confirmed = db.get_whatsapp_confirmed(user_id)
                 if not is_confirmed:
                     all_met = False
@@ -352,37 +359,29 @@ class Handlers:
     def require_membership(self, func):
         """Decorator to check membership AFTER user is registered"""
         def wrapper(message_or_call, *args, **kwargs):
-            # Get user_id from message or call
             if hasattr(message_or_call, 'from_user'):
                 user_id = message_or_call.from_user.id
             else:
                 user_id = message_or_call.message.from_user.id
             
-            # Check if user is registered
             user = db.get_user(user_id)
             if not user:
-                # User not registered, let them register first
                 return func(message_or_call, *args, **kwargs)
             
-            # Check all memberships
             all_met, missing = self.check_all_memberships(user_id)
             
             if not all_met:
                 if DEBUG:
                     print(f"🔒 User {user_id} missing membership")
-                
-                # Show membership requirements screen
                 self.show_membership_requirements(user_id)
                 return
             
-            # User passed membership check, execute original function
             return func(message_or_call, *args, **kwargs)
         
         return wrapper
     
     def send_membership_required_message(self, user_id, requirement):
         """Legacy method - replaced by show_membership_requirements"""
-        # Use new system instead
         self.show_membership_requirements(user_id)
     
     def notify_referrer(self, referrer_id, new_user_id, new_user_name):
@@ -418,7 +417,7 @@ class Handlers:
                         referrer_id=referrer_id,
                         new_user_name=new_user_name,
                         new_user_id=new_user_id,
-                        date=get_current_time().strftime("%Y-%m-%d %H:%M"),
+                        date=get_current_time().strftime("%Y-%m-%d %I:%M %p"),
                         total=total
                     ),
                     parse_mode='Markdown'
@@ -429,7 +428,6 @@ class Handlers:
     # ==================== Command Handlers ====================
     
     def restore_command(self, message):
-        """Clear user state and return to main menu"""
         user_id = message.from_user.id
         db.clear_user_state(user_id)
         
@@ -438,7 +436,7 @@ class Handlers:
         
         self.bot.send_message(
             user_id,
-            "✅ *State Restored!*\n\nYou've been returned to the main menu.",
+            "✅ **State Restored!**\n\nYou've been returned to the main menu.",
             parse_mode='Markdown',
             reply_markup=utils.create_main_menu_keyboard(user_id)
         )
@@ -457,7 +455,6 @@ class Handlers:
             if DEBUG:
                 print(f"👤 Existing user {user_id} logged in")
             
-            # Check membership for existing user
             all_met, missing = self.check_all_memberships(user_id)
             if not all_met:
                 self.show_membership_requirements(user_id)
@@ -476,20 +473,34 @@ class Handlers:
                 self.show_main_menu(user_id)
             return
 
-        # New user registration
+        # New user registration - handle both ref and pdf links as referrals
         referred_by = None
-        if start_param and start_param.startswith('ref_'):
-            referrer_id = start_param.split('_')[1]
-            referrer = db.get_user(referrer_id)
-            if referrer and referrer['user_id'] != user_id:
-                referred_by = referrer['user_id']
-                self.bot.send_message(referrer_id, "**🚸 Someone Used Your Referral Link**", parse_mode='Markdown')
-                if DEBUG:
-                    print(f"🔗 New user {user_id} referred by {referrer_id}")
-
         pending_pdf = None
-        if start_param and start_param.startswith('pdf_'):
-            pending_pdf = start_param.split('_')[1]
+
+        if start_param:
+            if start_param.startswith('ref_'):
+                referrer_id = start_param.split('_')[1]
+                referrer = db.get_user(referrer_id)
+                if referrer and referrer['user_id'] != user_id:
+                    referred_by = referrer['user_id']
+                    self.bot.send_message(referrer_id, "**🚸 Someone Used Your Referral Link**", parse_mode='Markdown')
+                    if DEBUG:
+                        print(f"🔗 New user {user_id} referred by {referrer_id}")
+            
+            elif start_param.startswith('pdf_'):
+                # PDF share link - extract PDF ID and check for referral in extended format
+                parts = start_param.split('_')
+                pending_pdf = parts[1]
+                
+                # Check if referral is embedded (format: pdf_123_ref_456)
+                if len(parts) >= 4 and parts[2] == 'ref':
+                    referrer_id = parts[3]
+                    referrer = db.get_user(referrer_id)
+                    if referrer and referrer['user_id'] != user_id:
+                        referred_by = referrer['user_id']
+                        self.bot.send_message(referrer_id, "**🚸 Someone Used Your PDF Share Link as Referral!**", parse_mode='Markdown')
+                        if DEBUG:
+                            print(f"🔗 New user {user_id} referred by {referrer_id} via PDF link")
 
         db.set_user_state(user_id, 'register', {
             'step': 'name',
@@ -527,7 +538,6 @@ class Handlers:
             )
     
     def handle_document(self, message):
-        """Handle PDF document uploads"""
         user_id = message.from_user.id
         user = db.get_user(user_id)
         
@@ -539,7 +549,6 @@ class Handlers:
             self.bot.send_message(user_id, "❌ Please register first using /start")
             return
         
-        # Check membership before upload
         all_met, missing = self.check_all_memberships(user_id)
         if not all_met:
             self.show_membership_requirements(user_id)
@@ -550,11 +559,10 @@ class Handlers:
         if current_state == 'upload' and data and data.get('step') == 'waiting_for_file':
             self.handle_upload_pdf(message, data)
         else:
-            # Check if it's a PDF
             if message.document.mime_type != 'application/pdf':
                 self.bot.send_message(
                     user_id,
-                    "❌ Please send a valid *PDF document*.\n\nSend /cancel to cancel.",
+                    "❌ Please send a valid **PDF document**.\n\nSend /cancel to cancel.",
                     parse_mode='Markdown'
                 )
                 return
@@ -573,7 +581,7 @@ class Handlers:
             
             self.bot.send_message(
                 user_id,
-                f"📄 *Document Received:* `{message.document.file_name}`\n\n"
+                f"📄 **Document Received:** `{message.document.file_name}`\n\n"
                 f"Do you want to upload this as a PDF?\n\n"
                 f"📦 Size: {utils.format_file_size(message.document.file_size)}",
                 parse_mode='Markdown',
@@ -588,7 +596,6 @@ class Handlers:
             self.bot.send_message(user_id, texts.ACCOUNT_SUSPENDED)
             return
         
-        # Update last active for registered users
         if user and not user['is_banned']:
             db.update_user_activity(user_id)
 
@@ -597,7 +604,7 @@ class Handlers:
         if DEBUG:
             print(f"📨 Message from {user_id}: {message.text if message.text else '[non-text]'}, state={current_state}")
         
-        # Handle admin flows (these don't need membership check)
+        # Handle admin flows
         if current_state == 'add_requirement' and self.admin_instance:
             self.admin_instance.process_add_requirement(user_id, message)
             return
@@ -606,7 +613,7 @@ class Handlers:
             self.admin_instance.process_edit_requirement(user_id, message)
             return
         
-        # Handle reply to admin state
+        # Handle reply to admin
         if current_state == 'reply_to_admin':
             if message.text and message.text.lower() == texts.BUTTON_CANCEL.lower():
                 db.clear_user_state(user_id)
@@ -618,27 +625,26 @@ class Handlers:
                 )
                 return
             
-            # Send reply to admin
             admin_id = data.get('admin_id')
             if admin_id:
                 if self.send_reply_to_admin(user_id, admin_id, message.text):
                     db.clear_user_state(user_id)
                     self.bot.send_message(
                         user_id,
-                        "✅ *Reply Sent!*\n\nYour message has been sent to the admin.\n\nThey will respond shortly.",
+                        "✅ **Reply Sent!**\n\nYour message has been sent to the admin.\n\nThey will respond shortly.",
                         parse_mode='Markdown',
                         reply_markup=utils.create_main_menu_keyboard(user_id)
                     )
                 else:
                     self.bot.send_message(
                         user_id,
-                        "❌ *Failed to Send*\n\nCould not send your reply. Please try again later.",
+                        "❌ **Failed to Send**\n\nCould not send your reply. Please try again later.",
                         parse_mode='Markdown',
                         reply_markup=utils.create_main_menu_keyboard(user_id)
                     )
             return
   
-        # Handle admin reply to user state
+        # Handle admin reply to user
         if current_state == 'admin_reply_user':
             if message.text and message.text.lower() == texts.BUTTON_CANCEL.lower():
                 db.clear_user_state(user_id)
@@ -650,27 +656,26 @@ class Handlers:
                 )
                 return
             
-            # Send admin reply to user
             target_user_id = data.get('target_user_id')
             if target_user_id and self.admin_instance:
                 if self.admin_instance.send_admin_reply_to_user(user_id, target_user_id, message.text):
                     db.clear_user_state(user_id)
                     self.bot.send_message(
                         user_id,
-                        f"✅ *Reply Sent!*\n\nYour reply has been sent to user `{target_user_id}`.",
+                        f"✅ **Reply Sent!**\n\nYour reply has been sent to user `{target_user_id}`.",
                         parse_mode='Markdown',
                         reply_markup=utils.create_main_menu_keyboard(user_id)
                     )
                 else:
                     self.bot.send_message(
                         user_id,
-                        "❌ *Failed to Send*\n\nCould not send your reply.",
+                        "❌ **Failed to Send**\n\nCould not send your reply.",
                         parse_mode='Markdown',
                         reply_markup=utils.create_main_menu_keyboard(user_id)
                     )
             return
         
-        # Handle registration flow (no membership check needed)
+        # Handle registration
         if current_state == 'register':
             self.handle_registration(message, data)
             return
@@ -686,7 +691,7 @@ class Handlers:
             )
             return
         
-        # For registered users, check membership BEFORE any action
+        # For registered users, check membership
         if user and not user['is_banned']:
             all_met, missing = self.check_all_memberships(user_id)
             if not all_met:
@@ -820,7 +825,7 @@ class Handlers:
         if DEBUG:
             print(f"✏️ Manual region entered by {user_id}: {region}")
         
-        location_info = f"📍 *Region:* `{region}`"
+        location_info = f"📍 **Region:** `{region}`"
         
         for admin_id in ADMIN_IDS:
             try:
@@ -832,7 +837,7 @@ class Handlers:
                         user_id=user_id,
                         user_phone=data.get('phone', 'Not provided'),
                         location_info=location_info,
-                        date=get_current_time().strftime("%Y-%m-%d %H:%M")
+                        date=get_current_time().strftime("%Y-%m-%d %I:%M %p")
                     ),
                     parse_mode='Markdown'
                 )
@@ -861,7 +866,7 @@ class Handlers:
         if DEBUG:
             print(f"✏️ Manual school entered by {user_id}: {school} in {region}")
         
-        location_info = f"📍 *Region:* `{region}`\n\n🏫 *School:* `{school}`"
+        location_info = f"📍 **Region:** `{region}`\n\n🏫 **School:** `{school}`"
         
         for admin_id in ADMIN_IDS:
             try:
@@ -879,7 +884,7 @@ class Handlers:
                         user_id=user_id,
                         user_phone=data.get('phone', 'Not provided'),
                         location_info=location_info,
-                        date=get_current_time().strftime("%Y-%m-%d %H:%M")
+                        date=get_current_time().strftime("%Y-%m-%d %I:%M %p")
                     ),
                     parse_mode='Markdown',
                     reply_markup=markup
@@ -1107,15 +1112,18 @@ class Handlers:
             parse_mode='Markdown'
         )
         
-        # After registration, check membership requirements
+        # After registration, check membership requirements FIRST
         all_met, missing = self.check_all_memberships(user_id)
+        
         if not all_met:
+            # Store pending PDF to show after membership
+            if pending_pdf:
+                db.set_user_state(user_id, 'pending_pdf_after_membership', {'pdf_id': pending_pdf})
             self.show_membership_requirements(user_id)
         else:
             self.show_main_menu(user_id)
-        
-        if pending_pdf:
-            self.handle_pdf_share(user_id, pending_pdf)
+            if pending_pdf:
+                self.handle_pdf_share(user_id, pending_pdf)
         
         self.bot.answer_callback_query(call.id)
     
@@ -1214,7 +1222,7 @@ class Handlers:
             user_id,
             texts.UPLOAD_SUBJECT,
             parse_mode='Markdown',
-            reply_markup=utils.create_subject_keyboard()
+            reply_markup=utils.create_subject_keyboard(for_search=False)
         )
         
         if DEBUG:
@@ -1286,6 +1294,10 @@ class Handlers:
             db.clear_user_state(user_id)
             return
         
+        # Check auto-approve setting
+        auto_approve = db.get_setting('auto_approve_pdfs', '0') == '1'
+        is_approved = 1 if auto_approve else 0
+        
         pdf_id = db.add_pdf(
             file_id=file_id,
             file_name=file_name,
@@ -1295,17 +1307,21 @@ class Handlers:
             exam_year=None
         )
         
+        if auto_approve:
+            db.approve_pdf(pdf_id)
+        
         db.clear_user_state(user_id)
         
         if DEBUG:
             print(f"✅ PDF uploaded by {user_id}: {file_name} (ID: {pdf_id})")
         
+        status = "✅ Approved" if auto_approve else "⏳ Pending Approval"
         msg = texts.UPLOAD_SUCCESS.format(
             file_name=file_name,
             subject=subject,
             tag=tag or "None",
             pdf_id=pdf_id
-        )
+        ) + f"\n\n**Status:** {status}"
         
         self.bot.send_message(
             user_id,
@@ -1314,20 +1330,24 @@ class Handlers:
             reply_markup=utils.create_main_menu_keyboard(user_id)
         )
         
-        for admin_id in ADMIN_IDS:
-            try:
-                self.bot.send_message(
-                    admin_id,
-                    f"📄 *New PDF Upload*\n\n"
-                    f"📄 *File:* `{file_name}`\n"
-                    f"👤 *User:* `{user_id}`\n"
-                    f"📚 *Subject:* `{subject}`\n"
-                    f"🏷️ *Tag:* `{tag or 'None'}`\n"
-                    f"🆔 *ID:* `{pdf_id}`",
-                    parse_mode='Markdown'
-                )
-            except:
-                pass
+        # Notify admins if setting enabled
+        notify_admins = db.get_setting('notify_admin_on_upload', '1') == '1'
+        if notify_admins:
+            for admin_id in ADMIN_IDS:
+                try:
+                    self.bot.send_message(
+                        admin_id,
+                        f"📄 **New PDF Upload**\n\n"
+                        f"📄 **File:** `{file_name}`\n"
+                        f"👤 **User:** `{user_id}`\n"
+                        f"📚 **Subject:** `{subject}`\n"
+                        f"🏷️ **Tag:** `{tag or 'None'}`\n"
+                        f"🆔 **ID:** `{pdf_id}`\n"
+                        f"✅ **Auto-approved:** {'Yes' if auto_approve else 'No'}",
+                        parse_mode='Markdown'
+                    )
+                except:
+                    pass
         
         if message_id:
             try:
@@ -1353,25 +1373,22 @@ class Handlers:
             user_id,
             texts.SEARCH_START,
             parse_mode='Markdown',
-            reply_markup=utils.create_subject_keyboard(for_search=True)  # ← CHANGE HERE
+            reply_markup=utils.create_subject_keyboard(for_search=True)
         )
     
     def handle_search_subject_callback(self, call):
         user_id = call.from_user.id
         subject = call.data.split('_')[2]
         
-        # Get current state to verify
         current_state, data = db.get_user_state(user_id)
         
         if DEBUG:
             print(f"📚 Search subject callback - user: {user_id}, subject: {subject}, state: {current_state}")
         
-        # Check if user is in search mode
         if current_state != 'search':
             self.bot.answer_callback_query(call.id, "Session expired. Please start a new search.", show_alert=True)
             return
         
-        # Update state with subject
         db.set_user_state(user_id, 'search', {'subject': subject, 'step': 'tag'})
         
         if DEBUG:
@@ -1393,7 +1410,6 @@ class Handlers:
         if DEBUG:
             print(f"🏷️ Search tag callback - user: {user_id}, state: {current_state}, data: {data}")
         
-        # Validate state
         if current_state != 'search':
             self.bot.answer_callback_query(call.id, "Session expired. Please start a new search.", show_alert=True)
             return
@@ -1411,12 +1427,15 @@ class Handlers:
         if DEBUG:
             print(f"   Subject: {subject}, Tag: {tag}")
         
-        # Save search criteria and go to results
+        # Get results per page setting
+        results_per_page = int(db.get_setting('search_results_per_page', '5'))
+        
         db.set_user_state(user_id, 'search', {
             'subject': subject,
             'tag': tag,
             'step': 'results',
-            'page': 0
+            'page': 0,
+            'limit': results_per_page
         })
         
         self.show_search_results(user_id, call.message.message_id)
@@ -1428,7 +1447,6 @@ class Handlers:
         if DEBUG:
             print(f"🔍 Showing search results - user: {user_id}, state: {current_state}, data: {data}")
         
-        # Validate state
         if not current_state or current_state != 'search':
             self.bot.send_message(
                 user_id,
@@ -1450,11 +1468,11 @@ class Handlers:
         subject = data.get('subject')
         tag = data.get('tag')
         page = data.get('page', 0)
-        limit = 5
+        limit = data.get('limit', 5)
         offset = page * limit
         
         if DEBUG:
-            print(f"   Searching: subject={subject}, tag={tag}, page={page}")
+            print(f"   Searching: subject={subject}, tag={tag}, page={page}, limit={limit}")
         
         total = db.count_pdfs_by_filters(subject=subject, tag=tag)
         total_pages = (total + limit - 1) // limit if total > 0 else 1
@@ -1471,6 +1489,9 @@ class Handlers:
         
         pdfs = db.get_pdfs_by_filters(subject=subject, tag=tag, limit=limit, offset=offset)
         
+        # Check show uploader setting
+        show_uploader = db.get_setting('show_uploader_in_search', '1') == '1'
+        
         text = texts.SEARCH_RESULTS.format(
             subject=subject,
             tag=tag or "All",
@@ -1481,19 +1502,17 @@ class Handlers:
         
         for idx, pdf in enumerate(pdfs, start=1):
             emoji = utils.get_pdf_emoji(pdf['tag'])
-            text += texts.SEARCH_RESULT_ITEM.format(
-                emoji=emoji,
-                name=pdf['file_name'][:40],
-                subject=pdf['subject'],
-                tag=pdf['tag'],
-                likes=pdf['like_count'],
-                downloads=pdf['download_count'],
-                id=pdf['id']
-            )
+            text += f"{emoji} **{pdf['file_name'][:40]}**\n"
+            text += f"   📚 `{pdf['subject']}` | 🏷️ `{pdf['tag']}`\n"
+            if show_uploader:
+                uploader = db.get_user(pdf['uploaded_by'])
+                uploader_name = uploader['full_name'] if uploader else "Unknown"
+                text += f"   👤 `{uploader_name}`\n"
+            text += f"   ❤️ `{pdf['like_count']}` likes | 📥 `{pdf['download_count']}` downloads\n"
+            text += f"   🆔 `{pdf['id']}`\n\n"
         
         markup = InlineKeyboardMarkup(row_width=2)
         
-        # Navigation buttons
         nav_buttons = []
         if page > 0:
             nav_buttons.append(InlineKeyboardButton("◀️ Prev", callback_data="search_prev"))
@@ -1502,7 +1521,6 @@ class Handlers:
         if nav_buttons:
             markup.row(*nav_buttons)
         
-        # PDF list buttons
         for pdf in pdfs:
             markup.add(InlineKeyboardButton(
                 f"{utils.get_pdf_emoji(pdf['tag'])} {pdf['file_name'][:30]}",
@@ -1529,7 +1547,6 @@ class Handlers:
         if DEBUG:
             print(f"🔍 Search navigation - user: {user_id}, action: {call.data}, state: {current_state}")
         
-        # Validate state
         if current_state != 'search':
             self.bot.answer_callback_query(call.id, "Session expired. Please start a new search.", show_alert=True)
             return
@@ -1549,7 +1566,6 @@ class Handlers:
             if DEBUG:
                 print(f"   Prev page: {data['page']}")
         elif action == "search_new":
-            # Clear search state and start fresh
             db.clear_user_state(user_id)
             self.bot.answer_callback_query(call.id, "Starting new search...")
             self.start_search(user_id)
@@ -1559,16 +1575,12 @@ class Handlers:
                 pass
             return
         
-        # Save updated page number
         db.set_user_state(user_id, 'search', data)
-        
-        # Refresh results
         self.show_search_results(user_id, call.message.message_id)
         self.bot.answer_callback_query(call.id)
 
     
     def handle_search_state(self, message, data):
-        """Handle search state when user sends text"""
         user_id = message.from_user.id
         self.bot.send_message(
             user_id,
@@ -1624,7 +1636,7 @@ class Handlers:
                 self.bot.send_document(
                     user_id, 
                     pdf['file_id'], 
-                    caption=f"📄 *{pdf['file_name']}*\n\n📚 *Subject:* {pdf['subject']}\n🏷️ *Tag:* {pdf['tag']}",
+                    caption=f"📄 **{pdf['file_name']}**\n\n📚 **Subject:** {pdf['subject']}\n🏷️ **Tag:** {pdf['tag']}",
                     parse_mode='Markdown'
                 )
                 db.increment_download(pdf_id, user_id)
@@ -1737,6 +1749,11 @@ class Handlers:
         
         for admin_id in ADMIN_IDS:
             try:
+                markup = InlineKeyboardMarkup()
+                markup.add(
+                    InlineKeyboardButton("👁️ View PDF", callback_data=f"view_{pdf_id}")
+                )
+                
                 self.bot.send_message(
                     admin_id,
                     texts.REPORT_NOTIFY_ADMIN.format(
@@ -1746,7 +1763,8 @@ class Handlers:
                         reporter=message.from_user.full_name or message.from_user.first_name,
                         reason=report_text
                     ),
-                    parse_mode='Markdown'
+                    parse_mode='Markdown',
+                    reply_markup=markup
                 )
             except:
                 pass
@@ -1835,7 +1853,7 @@ class Handlers:
         
         if message_id:
             self.bot.edit_message_text(
-                "🔗 *Share Your Referral Link*\n\n"
+                "🔗 **Share Your Referral Link**\n\n"
                 "Share this link with your friends and classmates:\n\n"
                 f"`{referral_link}`\n\n"
                 "When they register using your link, you'll get credit! 🎉",
@@ -1847,7 +1865,7 @@ class Handlers:
         else:
             self.bot.send_message(
                 user_id,
-                "🔗 *Share Your Referral Link*\n\n"
+                "🔗 **Share Your Referral Link**\n\n"
                 f"`{referral_link}`\n\n"
                 "Share this link with your friends!",
                 parse_mode='Markdown',
@@ -1879,7 +1897,7 @@ class Handlers:
             db.set_user_state(user_id, 'register', {'step': 'name', 'pending_pdf': pdf_id})
             self.bot.send_message(
                 user_id,
-                "📚 *Shared PDF*\n\nPlease register first to view this PDF.",
+                "📚 **Shared PDF**\n\nPlease register first to view this PDF.",
                 parse_mode='Markdown',
                 reply_markup=utils.create_cancel_keyboard()
             )
@@ -1899,6 +1917,7 @@ class Handlers:
             self.bot.send_message(user_id, text, parse_mode='Markdown', reply_markup=markup)
     
     # ==================== Admin Broadcast & SQL ====================
+    
     def handle_admin_broadcast(self, message, data):
         user_id = message.from_user.id
         broadcast_text = message.text
@@ -1913,22 +1932,23 @@ class Handlers:
             )
             return
         
-        # Get admin info
         admin = db.get_user(user_id)
-        admin_name = admin['full_name'] if admin else f"Admin {user_id}"
+        show_admin_name = db.get_setting('show_admin_name_in_broadcast', '1') == '1'
+        admin_name = admin['full_name'] if admin and show_admin_name else ""
         
-        # Format broadcast with admin indicator
         broadcast_message = (
-            f"📢 *ANNOUNCEMENT FROM ADMIN*\n"
+            f"📢 **ANNOUNCEMENT**\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"{broadcast_text}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"👤 *Sent by:* {admin_name}\n"
-            f"📅 *Date:* {get_current_time().strftime('%Y-%m-%d %I:%M %p')}\n\n"
-            f"_To reply, click the button below_"
         )
         
-        # Create reply button for users to respond to admin
+        if show_admin_name and admin_name:
+            broadcast_message += f"👤 **Sent by:** {admin_name}\n"
+        
+        broadcast_message += f"📅 **Date:** {get_current_time().strftime('%Y-%m-%d %I:%M %p')}\n\n"
+        broadcast_message += f"_To reply, click the button below_"
+        
         reply_markup = InlineKeyboardMarkup()
         reply_markup.add(InlineKeyboardButton(
             "💬 Reply to Admin",
@@ -1938,6 +1958,11 @@ class Handlers:
         users = db.get_all_users()
         success_count = 0
         failed_count = 0
+        
+        broadcast_enabled = db.get_setting('broadcast_enabled', '1') == '1'
+        if not broadcast_enabled:
+            self.bot.send_message(user_id, "❌ Broadcast is disabled by admin settings.")
+            return
         
         for user in users:
             try:
@@ -1958,11 +1983,10 @@ class Handlers:
         if DEBUG:
             print(f"📢 Broadcast sent by admin {user_id}: {success_count} success, {failed_count} failed")
         
-        # Send confirmation to admin
         self.bot.send_message(
             user_id,
-            f"✅ *Broadcast Sent!*\n\n"
-            f"📊 *Statistics:*\n"
+            f"✅ **Broadcast Sent!**\n\n"
+            f"📊 **Statistics:**\n"
             f"├ ✅ Sent to: `{success_count}` users\n"
             f"└ ❌ Failed: `{failed_count}` users",
             parse_mode='Markdown',
@@ -1987,22 +2011,19 @@ class Handlers:
             )
             return
         
-        # Execute SQL
         result = db.execute_sql(sql)
         
-        # Format result for display
         if isinstance(result, list):
             if len(result) == 0:
                 result_str = "✅ Query executed. No rows returned."
             else:
-                # Format rows nicely
                 rows = []
-                for row in result[:20]:  # Limit to 20 rows
+                for row in result[:20]:
                     if isinstance(row, sqlite3.Row):
                         rows.append(dict(row))
                     else:
                         rows.append(row)
-                result_str = f"📊 *Results:* ({len(result)} rows)\n\n```\n"
+                result_str = f"📊 **Results:** ({len(result)} rows)\n\n```\n"
                 import json
                 result_str += json.dumps(rows, indent=2, default=str)[:3500]
                 result_str += "\n```"
@@ -2024,11 +2045,9 @@ class Handlers:
         )
     
     def start_reply_to_admin(self, user_id, admin_id, message_id=None):
-        """Start the process for user to reply to admin"""
         if DEBUG:
             print(f"💬 User {user_id} starting reply to admin {admin_id}")
         
-        # Store reply context
         db.set_user_state(user_id, 'reply_to_admin', {
             'admin_id': admin_id,
             'step': 'waiting_for_message'
@@ -2036,10 +2055,10 @@ class Handlers:
         
         self.bot.send_message(
             user_id,
-            "💬 *Reply to Admin*\n\n"
+            "💬 **Reply to Admin**\n\n"
             "Please type your message below.\n\n"
             "The admin will receive your message with your user info.\n\n"
-            "Type *Cancel* to cancel.",
+            "Type **Cancel** to cancel.",
             parse_mode='Markdown',
             reply_markup=utils.create_cancel_keyboard()
         )
@@ -2051,7 +2070,6 @@ class Handlers:
                 pass
     
     def send_reply_to_admin(self, user_id, admin_id, reply_text):
-        """Send user's reply to admin with user info"""
         user = db.get_user(user_id)
         if not user:
             return False
@@ -2060,22 +2078,20 @@ class Handlers:
         user_class = user['class'] or "Not set"
         user_region = user['region'] or "Not set"
         
-        # Format reply message for admin
         admin_message = (
-            f"💬 *REPLY FROM USER*\n"
+            f"💬 **REPLY FROM USER**\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"📝 *Message:*\n{reply_text}\n\n"
+            f"📝 **Message:**\n{reply_text}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"👤 *User:* {user_name}\n"
-            f"🆔 *ID:* `{user_id}`\n"
-            f"🎓 *Class:* {user_class}\n"
-            f"📍 *Region:* {user_region}\n"
-            f"📅 *Date:* {get_current_time().strftime('%Y-%m-%d %I:%M %p')}\n"
+            f"👤 **User:** {user_name}\n"
+            f"🆔 **ID:** `{user_id}`\n"
+            f"🎓 **Class:** {user_class}\n"
+            f"📍 **Region:** {user_region}\n"
+            f"📅 **Date:** {get_current_time().strftime('%Y-%m-%d %I:%M %p')}\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"_Use the buttons below to reply back to this user_"
         )
         
-        # Create reply button for admin to respond back
         reply_markup = InlineKeyboardMarkup()
         reply_markup.add(
             InlineKeyboardButton("📝 Reply to User", callback_data=f"admin_reply_user_{user_id}"),
@@ -2105,7 +2121,6 @@ class Handlers:
         if DEBUG:
             print(f"📞 Callback from {user_id}: {data}")
         
-        # Update last active for registered users
         if user and not user['is_banned']:
             db.update_user_activity(user_id)
         
@@ -2125,7 +2140,6 @@ class Handlers:
             self.bot.answer_callback_query(call.id)
             return
         
-        # Handle confirm upload
         if data == "confirm_upload":
             current_state, pending_data = db.get_user_state(user_id)
             if current_state == 'pending_upload' and pending_data:
@@ -2141,7 +2155,6 @@ class Handlers:
                 self.bot.answer_callback_query(call.id, "Session expired. Please start again.")
             return
         
-        # Handle share referral
         if data == "share_referral":
             self.show_referral_share(user_id, call.message.message_id)
             self.bot.answer_callback_query(call.id)
@@ -2152,7 +2165,7 @@ class Handlers:
             self.bot.answer_callback_query(call.id, "Link copied! Share it with friends.", show_alert=True)
             self.bot.send_message(
                 user_id,
-                f"🔗 *Your Referral Link*\n\n`{referral_link}`\n\nSend this link to your friends!",
+                f"🔗 **Your Referral Link**\n\n`{referral_link}`\n\nSend this link to your friends!",
                 parse_mode='Markdown'
             )
             return
@@ -2163,7 +2176,7 @@ class Handlers:
             self.bot.answer_callback_query(call.id)
             return
         
-        # Handle registration callbacks
+        # Registration callbacks
         if data.startswith('region_'):
             self.handle_region_callback(call)
             return
@@ -2192,7 +2205,7 @@ class Handlers:
             self.handle_manual_region_start(call)
             return
         
-        # Handle upload callbacks
+        # Upload callbacks
         if data.startswith('subject_'):
             self.handle_subject_callback(call)
             return
@@ -2201,7 +2214,7 @@ class Handlers:
             self.handle_tag_callback(call)
             return
         
-        # Handle search callbacks
+        # Search callbacks
         if data.startswith('search_subject_'):
             self.handle_search_subject_callback(call)
             return
@@ -2214,7 +2227,7 @@ class Handlers:
             self.handle_search_navigation(call)
             return
         
-        # Handle PDF action callbacks
+        # PDF action callbacks
         if data.startswith('view_'):
             self.handle_view_pdf_callback(call)
             return
@@ -2235,32 +2248,38 @@ class Handlers:
             self.handle_share_callback(call)
             return
         
-        # ==================== New Membership Callbacks ====================
+        # Delete PDF callbacks
+        if data.startswith("delete_"):
+            pdf_id = int(data.split("_")[1])
+            if self.admin_instance:
+                self.admin_instance.delete_pdf(user_id, pdf_id, call.message.message_id)
+            self.bot.answer_callback_query(call.id)
+            return
         
-        # Handle refresh membership
+        if data.startswith("confirm_delete_"):
+            pdf_id = int(data.split("_")[2])
+            if self.admin_instance:
+                self.admin_instance.confirm_delete_pdf(user_id, pdf_id, call.message.message_id)
+            self.bot.answer_callback_query(call.id)
+            return
+        
+        # Membership callbacks
         if data == "refresh_membership":
             self.show_membership_requirements(user_id)
             self.bot.answer_callback_query(call.id, "✅ Status refreshed!")
             return
         
-        # Handle membership complete
         if data == "membership_complete":
             self.complete_membership(user_id)
             self.bot.answer_callback_query(call.id, "🎉 Welcome to Ardayda Bot!")
             return
         
-        # Handle WhatsApp confirmation
         if data.startswith("confirm_whatsapp_"):
             req_id = int(data.split("_")[2])
-            
-            # Mark WhatsApp as confirmed
             db.set_whatsapp_confirmed(user_id, True)
             db.log_membership_event(user_id, req_id, 'confirm_whatsapp')
-            
-            # Update membership message
             self.show_membership_requirements(user_id)
             
-            # Check if all requirements are now met
             status = self.get_all_membership_status(user_id)
             if status['all_joined']:
                 self.bot.answer_callback_query(call.id, "✅ All requirements completed! Click Continue to proceed.")
@@ -2268,9 +2287,7 @@ class Handlers:
                 self.bot.answer_callback_query(call.id, "✅ WhatsApp confirmed! Join remaining channels to continue.")
             return
         
-        # ==================== End New Membership Callbacks ====================
-        
-        # Handle admin callbacks
+        # Admin callbacks
         if (data.startswith('admin_') or data.startswith('membership_')) and self.admin_instance:
             if self.is_admin(user_id):
                 self.admin_instance.handle_admin_callback(call)
@@ -2278,14 +2295,14 @@ class Handlers:
                 self.bot.answer_callback_query(call.id, texts.ERROR_PERMISSION)
             return
         
-        # Handle reply to admin from user
+        # Reply to admin
         if data.startswith("reply_to_admin_"):
             admin_id = int(data.split("_")[3])
             self.start_reply_to_admin(user_id, admin_id, call.message.message_id)
             self.bot.answer_callback_query(call.id)
             return
         
-        # Handle admin reply to user (routed to admin_instance)
+        # Admin reply to user
         if data.startswith("admin_reply_user_"):
             if self.is_admin(user_id) and self.admin_instance:
                 target_user_id = int(data.split("_")[3])
@@ -2295,7 +2312,7 @@ class Handlers:
                 self.bot.answer_callback_query(call.id, texts.ERROR_PERMISSION)
             return
         
-        # Handle membership verification (legacy)
+        # Legacy membership verification
         if data.startswith('verify_telegram_') or data.startswith('verify_whatsapp_'):
             if self.admin_instance:
                 self.admin_instance.handle_admin_callback(call)

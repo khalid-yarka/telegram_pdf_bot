@@ -19,14 +19,12 @@ def format_date(dt):
     if dt is None:
         return "Unknown"
     
-    # If dt is a string, convert to datetime
     if isinstance(dt, str):
         try:
             dt = datetime.fromisoformat(dt)
         except:
             return dt
     
-    # If dt is naive (no timezone), localize it
     if dt.tzinfo is None:
         dt = SOMALIA_TZ.localize(dt)
     
@@ -46,7 +44,6 @@ def format_file_size(bytes_size):
 def is_telegram_member(bot, user_id, link):
     """Check if user is a member of a Telegram channel/group."""
     try:
-        # Extract username from link
         if 't.me/' in link:
             username = link.split('t.me/')[-1]
             if '/' in username:
@@ -56,7 +53,6 @@ def is_telegram_member(bot, user_id, link):
         else:
             username = link
         
-        # Remove any query parameters
         username = username.split('?')[0]
         
         if DEBUG:
@@ -86,12 +82,10 @@ def create_main_menu_keyboard(user_id=None):
         KeyboardButton(texts.BUTTON_HELP)
     )
     
-    # Add admin button if user is admin
     if user_id:
         from database import get_user
         from config import ADMIN_IDS
         user = get_user(user_id)
-        # Check both database is_admin flag AND config ADMIN_IDS
         is_admin_user = (user and user['is_admin']) or (user_id in ADMIN_IDS)
         if is_admin_user:
             if DEBUG:
@@ -115,21 +109,16 @@ def create_subject_keyboard(for_search=False):
     markup = InlineKeyboardMarkup(row_width=3)
     buttons = []
     
-    # Choose prefix based on usage
     prefix = "search_subject_" if for_search else "subject_"
     
     for subject in texts.SUBJECTS:
         buttons.append(InlineKeyboardButton(subject, callback_data=f"{prefix}{subject}"))
     
-    # Add buttons in rows of 3
     for i in range(0, len(buttons), 3):
         markup.row(*buttons[i:i+3])
     
-    # Add cancel button at bottom
     markup.add(InlineKeyboardButton(texts.BUTTON_CANCEL, callback_data="cancel"))
     return markup
-
-
 
 def create_tag_keyboard():
     """Create tag selection keyboard with 2 columns for better UI"""
@@ -140,11 +129,9 @@ def create_tag_keyboard():
     for tag in TAGS:
         buttons.append(InlineKeyboardButton(tag, callback_data=f"tag_{tag}"))
     
-    # Add buttons in rows of 2
     for i in range(0, len(buttons), 2):
         markup.row(*buttons[i:i+2])
     
-    # Add skip and cancel buttons
     markup.row(
         InlineKeyboardButton("⏭️ Skip", callback_data="tag_skip"),
         InlineKeyboardButton(texts.BUTTON_CANCEL, callback_data="cancel")
@@ -160,11 +147,9 @@ def create_search_tag_keyboard():
     for tag in TAGS:
         buttons.append(InlineKeyboardButton(tag, callback_data=f"search_tag_{tag}"))
     
-    # Add buttons in rows of 2
     for i in range(0, len(buttons), 2):
         markup.row(*buttons[i:i+2])
     
-    # Add skip and cancel buttons
     markup.row(
         InlineKeyboardButton("⏭️ Skip", callback_data="search_tag_skip"),
         InlineKeyboardButton(texts.BUTTON_CANCEL, callback_data="cancel")
@@ -177,7 +162,6 @@ def create_pdf_action_buttons(pdf_id, user_id, is_admin=False):
     
     markup = InlineKeyboardMarkup(row_width=2)
     
-    # First row: Like/Unlike and Download
     if db.has_liked(pdf_id, user_id):
         like_text = texts.BUTTON_UNLIKE
         like_callback = f"unlike_{pdf_id}"
@@ -190,13 +174,11 @@ def create_pdf_action_buttons(pdf_id, user_id, is_admin=False):
         InlineKeyboardButton(texts.BUTTON_DOWNLOAD, callback_data=f"download_{pdf_id}")
     )
     
-    # Second row: Report and Share
     markup.add(
         InlineKeyboardButton(texts.BUTTON_REPORT, callback_data=f"report_{pdf_id}"),
         InlineKeyboardButton(texts.BUTTON_SHARE, callback_data=f"share_{pdf_id}")
     )
     
-    # Third row: Admin options if applicable
     if is_admin:
         markup.add(InlineKeyboardButton("🗑️ Delete", callback_data=f"delete_{pdf_id}"))
     
@@ -254,7 +236,6 @@ def create_pagination_buttons(page, total_pages, callback_prefix, extra_data=Non
     if page > 0:
         nav_buttons.append(InlineKeyboardButton("◀️ Prev", callback_data=f"{callback_prefix}_prev_{page-1}"))
     
-    # Show current page indicator
     nav_buttons.append(InlineKeyboardButton(f"📄 {page+1}/{total_pages}", callback_data="ignore"))
     
     if page < total_pages - 1:
@@ -270,7 +251,6 @@ def create_region_keyboard(include_manual=True):
     markup = InlineKeyboardMarkup(row_width=2)
     regions = list(texts.form_four_schools_by_region.keys())
     
-    # Add regions in rows of 2
     for i in range(0, len(regions), 2):
         row_buttons = []
         for j in range(2):
@@ -293,7 +273,6 @@ def create_schools_keyboard(schools, region, page=0, page_size=6):
     
     markup = InlineKeyboardMarkup(row_width=2)
     
-    # Add schools in rows of 2
     for i in range(0, len(page_schools), 2):
         row_buttons = []
         for j in range(2):
@@ -301,7 +280,6 @@ def create_schools_keyboard(schools, region, page=0, page_size=6):
                 row_buttons.append(InlineKeyboardButton(page_schools[i + j], callback_data=f"school_{page_schools[i + j]}"))
         markup.row(*row_buttons)
     
-    # Pagination row
     nav_buttons = []
     if page > 0:
         nav_buttons.append(InlineKeyboardButton("◀️ Prev", callback_data=f"schools_page_{region}_{page-1}"))
@@ -310,7 +288,6 @@ def create_schools_keyboard(schools, region, page=0, page_size=6):
     if nav_buttons:
         markup.row(*nav_buttons)
     
-    # Action buttons row
     markup.row(
         InlineKeyboardButton(texts.BUTTON_SCHOOL_NOT_LISTED, callback_data=f"manual_school_{region}"),
         InlineKeyboardButton(texts.BUTTON_BACK, callback_data="back_region")
@@ -389,45 +366,42 @@ def format_membership_status_text(telegram_reqs, whatsapp_reqs, telegram_joined,
     if total_required == 0:
         return "✅ No membership requirements. You have full access!"
     
-    text = "🔐 *MEMBERSHIP REQUIREMENTS*\n"
+    text = "🔐 **MEMBERSHIP REQUIREMENTS**\n"
     text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     
-    # Progress bar
     bar = create_progress_bar(total_joined, total_required)
     percent = int((total_joined / total_required) * 100) if total_required > 0 else 0
-    text += f"*Progress:* `{bar}` {total_joined}/{total_required} ({percent}%)\n\n"
+    text += f"**Progress:** `{bar}` {total_joined}/{total_required} ({percent}%)\n\n"
     
-    # Telegram Channels
     if telegram_reqs:
-        text += "📢 *TELEGRAM CHANNELS/GROUPS* (Auto-detected)\n"
+        text += "📢 **TELEGRAM CHANNELS/GROUPS** (Auto-detected)\n"
         text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         for req in telegram_reqs:
             if req.get('is_member', False):
-                text += f"✅ *{req['name']}* - Joined\n"
+                text += f"✅ **{req['name']}** - Joined\n"
             else:
-                text += f"❌ *{req['name']}* - Not joined\n"
+                text += f"❌ **{req['name']}** - Not joined\n"
                 text += f"   🔗 `{req['link']}`\n"
         text += "\n"
     
-    # WhatsApp Groups
     if whatsapp_reqs:
-        text += "💬 *WHATSAPP GROUPS* (Confirm after joining)\n"
+        text += "💬 **WHATSAPP GROUPS** (Confirm after joining)\n"
         text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         for req in whatsapp_reqs:
             if req.get('is_member', False):
-                text += f"✅ *{req['name']}* - Confirmed\n"
+                text += f"✅ **{req['name']}** - Confirmed\n"
             else:
-                text += f"❌ *{req['name']}* - Not confirmed\n"
+                text += f"❌ **{req['name']}** - Not confirmed\n"
                 text += f"   🔗 `{req['link']}`\n"
         text += "\n"
     
     text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     
     if total_joined == total_required:
-        text += "🎉 *Congratulations!* You've joined all required communities!\n"
+        text += "🎉 **Congratulations!** You've joined all required communities!\n"
         text += "Click the button below to continue to the main menu.\n\n"
     else:
-        text += "⚠️ *Please join all required channels/groups above* to access the bot.\n"
+        text += "⚠️ **Please join all required channels/groups above** to access the bot.\n"
         text += "For WhatsApp groups, click 'Confirm' after joining.\n\n"
     
     return text
