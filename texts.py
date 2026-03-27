@@ -1,5 +1,5 @@
 # telegram_pdf_bot/texts.py
-from config import TAGS, CLASSES
+from config import TAGS, CLASSES, SUBJECTS
 
 # ==================== REGISTRATION ====================
 
@@ -86,7 +86,9 @@ form_four_schools_by_region = {
 
 BUTTON_UPLOAD = "📤 Upload PDF"
 BUTTON_SEARCH = "🔍 Search PDFs"
+BUTTON_BROWSE = "📚 Browse PDFs"
 BUTTON_PROFILE = "👤 My Profile"
+BUTTON_SETTINGS = "⚙️ Settings"
 BUTTON_HELP = "❓ Help"
 BUTTON_ADMIN = "👑 Admin Panel"
 BUTTON_CANCEL = "❌ Cancel"
@@ -108,6 +110,8 @@ BUTTON_VERIFY = "✅ Verify"
 BUTTON_JOIN = "📢 Join"
 BUTTON_JOINED = "✅ I've Joined"
 BUTTON_REFRESH = "🔄 Refresh"
+BUTTON_ON = "✅ ON"
+BUTTON_OFF = "❌ OFF"
 
 # ==================== MANUAL ENTRY ====================
 
@@ -156,48 +160,8 @@ USER_REFERRAL_NOTIFICATION = (
     "Someone registered using your referral link!\n\n"
     "👤 **New User:** `{new_user_name}`\n"
     "📊 **Total Referrals:** `{total}`\n\n"
+    "💰 **+1 Pen Added!** You now have {pens} pens to browse PDFs.\n\n"
     "Keep sharing your link to earn more!"
-)
-
-# ==================== SUBJECTS ====================
-
-SUBJECTS = [
-    "Math", "Physics", "Chemistry", "Biology", "ICT",
-    "Arabic", "Islamic", "English", "Somali", "G.P",
-    "Geography", "History", "Agriculture", "Business"
-]
-
-# ==================== GENERAL ====================
-
-HOME_WELCOME = (
-    "🏠 **Main Menu**\n\n"
-    "Welcome back, **{name}!**\n\n"
-    "What would you like to do today?"
-)
-
-CANCELLED = (
-    "❌ **Cancelled**\n\n"
-    "Returning to main menu..."
-)
-
-SESSION_EXPIRED = (
-    "⏰ **Session Expired**\n\n"
-    "Please start over from the main menu."
-)
-
-UNKNOWN_INPUT = (
-    "ℹ️ **Please use the buttons provided**\n\n"
-    "If you need help, press the ❓ Help button."
-)
-
-NOT_REGISTERED = (
-    "❌ **Not Registered**\n\n"
-    "Please type /start to register first."
-)
-
-ACCOUNT_SUSPENDED = (
-    "🚫 **Account Suspended**\n\n"
-    "Your account has been suspended. Please contact an admin."
 )
 
 # ==================== UPLOAD ====================
@@ -217,8 +181,14 @@ UPLOAD_INVALID_FILE = (
 
 UPLOAD_RECEIVED = (
     "✅ **PDF Received!**\n\n"
-    "📄 **File:** `{file_name}`\n\n"
+    "📄 **File:** `{file_name}`\n"
+    "📦 **Size:** `{size}`\n\n"
     "Now let's add some details..."
+)
+
+UPLOAD_SELECT_CLASS = (
+    "🎓 **Select Class**\n\n"
+    "Choose the class this PDF is for:"
 )
 
 UPLOAD_SUBJECT = (
@@ -228,17 +198,32 @@ UPLOAD_SUBJECT = (
 
 UPLOAD_TAG = (
     "🏷️ **Select Tag**\n\n"
-    "Choose a tag to categorize this PDF:"
+    "Choose a tag to categorize this PDF:\n\n"
+    "📌 **Tags:**\n"
+    "• **Book** - Complete textbooks and reference books\n"
+    "• **Exam/Assignment** - Past papers and assignments\n"
+    "• **Question/Answer** - Q&A format materials\n"
+    "• **Chapters** - Individual chapter materials\n"
+    "• **Notes** - Study notes and summaries\n"
+    "• **Summary** - Concise summaries\n"
+    "• **Chapter Reviews** - Chapter review materials\n"
+    "• **Centerlized** - Centralized exams (requires year)\n"
+    "• **Unclassified** - Materials without specific classification"
+)
+
+UPLOAD_SELECT_YEAR = (
+    "📅 **Select Year**\n\n"
+    "Choose the year for this Centerlized exam:"
 )
 
 UPLOAD_SUCCESS = (
     "🎉 **Upload Successful!**\n\n"
     "📄 **File:** `{file_name}`\n"
+    "🎓 **Class:** `{pdf_class}`\n"
     "📚 **Subject:** `{subject}`\n"
     "🏷️ **Tag:** `{tag}`\n"
     "🆔 **ID:** `{pdf_id}`\n\n"
-    "⏳ **Pending Approval**\n"
-    "Admins will review your upload soon."
+    "**Status:** {status}"
 )
 
 UPLOAD_FAILED = (
@@ -253,44 +238,54 @@ SEARCH_START = (
     "Select a subject to search:"
 )
 
-SEARCH_SUBJECT_SELECTED = (
-    "🔍 **Subject:** `{subject}`\n\n"
-    "Select a tag (optional) or press **Skip**:"
+SEARCH_SELECT_CLASS = (
+    "🎓 **Select Class**\n\n"
+    "Choose the class you want to search in:"
+)
+
+SEARCH_SELECT_SUBJECT = (
+    "📚 **Select Subject**\n\n"
+    "Choose the subject to search:"
+)
+
+SEARCH_SELECT_TAG = (
+    "🏷️ **Select Tag**\n\n"
+    "Choose a tag to filter by (or press Skip):"
+)
+
+SEARCH_SELECT_YEAR = (
+    "📅 **Select Year**\n\n"
+    "Choose the year for Centerlized exams:"
 )
 
 SEARCH_NO_RESULTS = (
     "😕 **No Results Found**\n\n"
     "No PDFs found for the selected criteria.\n\n"
-    "Try a different subject or tag."
+    "Try different filters or start a new search."
 )
 
 SEARCH_RESULTS = (
     "📚 **Search Results**\n"
-    "━━━━━━━━━━━━━━━━━━━━━\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "🎓 **Class:** `{pdf_class}`\n"
     "📖 **Subject:** `{subject}`\n"
     "🏷️ **Tag:** `{tag}`\n"
     "📄 **Found:** `{total}` PDFs\n"
     "📄 **Page:** `{page}/{total_pages}`\n"
-    "━━━━━━━━━━━━━━━━━━━━━\n\n"
-)
-
-SEARCH_RESULT_ITEM = (
-    "{emoji} **{name}**\n"
-    "   📚 `{subject}` | 🏷️ `{tag}`\n"
-    "   ❤️ `{likes}` likes | 📥 `{downloads}` downloads\n"
-    "   🆔 `{id}`\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 )
 
 # ==================== PDF ACTIONS ====================
 
 PDF_VIEW = (
     "📄 **{name}**\n"
-    "━━━━━━━━━━━━━━━━━━━━━\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "🎓 **Class:** `{pdf_class}`\n"
     "📚 **Subject:** `{subject}`\n"
     "🏷️ **Tag:** `{tag}`\n"
     "👤 **Uploader:** `{uploader}`\n"
     "📅 **Date:** `{date}`\n"
-    "━━━━━━━━━━━━━━━━━━━━━\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     "📥 **Downloads:** `{downloads}`\n"
     "❤️ **Likes:** `{likes}`\n"
 )
@@ -339,7 +334,7 @@ REPORT_NOTIFY_ADMIN = (
 
 PROFILE_DISPLAY = (
     "👤 **My Profile**\n"
-    "━━━━━━━━━━━━━━━━━━━━━\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     "📛 **Name:** `{name}`\n"
     "🆔 **ID:** `{user_id}`\n"
     "📞 **Phone:** `{phone}`\n"
@@ -349,11 +344,16 @@ PROFILE_DISPLAY = (
     "📅 **Joined:** `{joined}`\n"
     "🕐 **Last Active:** `{last_active}`\n"
     "⏱️ **Member Since:** `{days_joined}` days\n"
-    "━━━━━━━━━━━━━━━━━━━━━\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     "📊 **Statistics**\n"
     "📤 **Uploads:** `{uploads}`\n"
     "📥 **Downloads:** `{downloads}`\n"
-    "━━━━━━━━━━━━━━━━━━━━━\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "💰 **Pens**\n"
+    "🖊️ **Available:** `{pens_available}`\n"
+    "🎁 **Total Earned:** `{pens_earned}`\n"
+    "📖 **Total Spent:** `{pens_spent}`\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     "🔗 **Referral Program**\n"
     "👥 **Referrals:** `{conversions}`\n"
 )
@@ -362,49 +362,134 @@ REFERRAL_LINK_TEXT = (
     "\n🔗 **Your Referral Link**\n\n"
     "Share this link with friends:\n"
     "`https://t.me/{bot_username}?start=ref_{user_id}`\n\n"
-    "When they register, you'll get credit!"
+    "Each referral gives you **+1 Pen** to browse PDFs!"
 )
+
+# ==================== SETTINGS ====================
+
+SETTINGS_MENU = (
+    "⚙️ **Settings**\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "🔔 **New PDF Notifications:** {notification_status}\n\n"
+    "When enabled, you'll receive alerts when new educational PDFs are uploaded.\n\n"
+    "💡 **Tip:** Click the button below to toggle notifications."
+)
+
+SETTINGS_NOTIFICATION_TOGGLED = (
+    "✅ **Notifications {status}**\n\n"
+    "You will {action} receive alerts when new PDFs are uploaded."
+)
+
+# ==================== BROWSING ====================
+
+BROWSING_START = (
+    "📚 **PDF Browser**\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "💰 **Pen Balance:** `{pens}` pen(s)\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "Each PDF you view costs **1 pen**.\n"
+    "You have {pdfs_per_pen} PDFs per pen available.\n\n"
+    "Click **Next** to start browsing!"
+)
+
+BROWSING_NO_PENS = (
+    "❌ **No Pens Available!**\n\n"
+    "You need pens to browse PDFs.\n\n"
+    "🔗 **How to get pens:**\n"
+    "• Share your referral link with friends\n"
+    "• Each new user who registers gives you **+1 pen**\n"
+    "• 1 pen = {pdfs_per_pen} PDF views\n\n"
+    "Share your referral link from the **Profile** menu!"
+)
+
+BROWSING_PDF_DISPLAY = (
+    "📚 **PDF Browser**\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "💰 **Pens Remaining:** `{pens}`\n"
+    "📖 **Page:** `{current}/{total}`\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "📄 **{name}**\n"
+    "🎓 **Class:** `{pdf_class}`\n"
+    "📚 **Subject:** `{subject}`\n"
+    "🏷️ **Tag:** `{tag}`\n"
+    "👤 **Uploader:** `{uploader}`\n"
+    "❤️ **Likes:** `{likes}` | 📥 **Downloads:** `{downloads}`\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+)
+
+BROWSING_NO_MORE = (
+    "📭 **No More PDFs**\n\n"
+    "You've viewed all available PDFs in this session.\n\n"
+    "💰 **Pens Remaining:** `{pens}`\n\n"
+    "Start a new browsing session to see more PDFs!"
+)
+
+BROWSING_SESSION_EXPIRED = (
+    "⏰ **Session Expired**\n\n"
+    "Your browsing session has expired. Start a new session to continue."
+)
+
+# ==================== PDF NOTIFICATION ====================
+
+NEW_PDF_NOTIFICATION = (
+    "📢 **New PDF Available!**\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "📚 **Subject:** `{subject}`\n"
+    "👤 **Uploaded by:** `{uploader_name}`\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "🔍 **Click below to search and view this PDF:**"
+)
+
+NOTIFICATION_SEARCH_BUTTON = "🔍 Search PDFs"
 
 # ==================== HELP ====================
 
 HELP_TEXT = (
     "❓ **Help Center**\n"
-    "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     "**📤 Upload PDF**\n"
     "Share educational materials with the community\n\n"
     "**🔍 Search PDFs**\n"
-    "Find PDFs by subject and tag\n\n"
+    "Find PDFs by class, subject, and tag\n\n"
+    "**📚 Browse PDFs**\n"
+    "Discover random PDFs using pens earned from referrals\n\n"
     "**👤 My Profile**\n"
-    "View your stats and referral link\n\n"
+    "View your stats, pens, and referral link\n\n"
+    "**⚙️ Settings**\n"
+    "Manage your notification preferences\n\n"
     "**🔗 Referral Program**\n"
-    "Invite friends and earn recognition\n\n"
+    "Invite friends to earn pens for browsing\n\n"
     "**⚠️ Report**\n"
     "Report inappropriate content\n\n"
-    "━━━━━━━━━━━━━━━━━━━━━\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     "**Need more help?**\n"
     "Contact our admin team via the button below."
 )
 
 # ==================== ADMIN ====================
 
-ADMIN_PANEL = "👑 **Admin Panel**\n\nSelect an option:"
+ADMIN_PANEL = (
+    "👑 **Admin Panel**\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "Select an option below:"
+)
 
 ADMIN_STATS = (
     "📊 **System Statistics**\n"
-    "━━━━━━━━━━━━━━━━━━━━━\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     "👥 **Total Users:** `{total_users}`\n"
     "📄 **Total PDFs:** `{total_pdfs}`\n"
     "📥 **Total Downloads:** `{total_downloads}`\n"
     "⏳ **Pending PDFs:** `{pending_pdfs}`\n"
     "🚨 **Pending Reports:** `{total_reports}`\n"
-    "━━━━━━━━━━━━━━━━━━━━━"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 )
 
 ADMIN_USER_LIST = "👥 **User List**\n\n"
 ADMIN_USER_ITEM = "{status}{role} **{name}**\n   ├ ID: `{id}`\n   └ {class_name} @ {school}\n\n"
 
 ADMIN_PDF_PENDING_LIST = "⏳ **Pending PDFs**\n\n"
-ADMIN_PDF_PENDING_ITEM = "{number}. **{name}**\n   📚 {subject} | {tag}\n   👤 {uploader}\n   🆔 `{id}`\n"
+ADMIN_PDF_PENDING_ITEM = "{number}. **{name}**\n   📚 {subject} | {tag} | 🎓 {pdf_class}\n   👤 {uploader}\n   🆔 `{id}`\n"
 
 ADMIN_REPORT_LIST = "🚨 **Pending Reports**\n\n"
 ADMIN_REPORT_ITEM = "{number}. PDF: **{pdf_name}** (ID: {pdf_id})\n   👤 {reporter}\n   💬 {reason}\n"
@@ -446,7 +531,7 @@ WHATSAPP_VERIFICATION = (
     "🔐 **WhatsApp Verification**\n\n"
     "To verify you've joined **{name}**, send this code in the WhatsApp group:\n\n"
     "`VERIFY {code}`\n\n"
-    "After sending, click the confirmation button."
+    "After sending, click the button below to confirm."
 )
 
 WHATSAPP_VERIFICATION_SUCCESS = "✅ **Verification Successful!** You can now use the bot."
@@ -462,7 +547,6 @@ MEMBERSHIP_JOINED = "✅ **{name}** - Joined"
 MEMBERSHIP_NOT_JOINED = "❌ **{name}** - Not joined"
 MEMBERSHIP_CONFIRMED = "✅ **{name}** - Confirmed"
 MEMBERSHIP_NOT_CONFIRMED = "❌ **{name}** - Not confirmed"
-MEMBERSHIP_LINK_FORMAT = "   🔗 `{link}`"
 
 MEMBERSHIP_COMPLETE = (
     "🎉 **Congratulations!** You've joined all required communities!\n"
@@ -483,7 +567,9 @@ MEMBERSHIP_WELCOME = (
     "✅ You now have full access to:\n"
     "├ 📤 Upload PDFs\n"
     "├ 🔍 Search Educational Materials\n"
+    "├ 📚 Browse PDFs with Pens\n"
     "├ 👤 Track Your Profile\n"
+    "├ ⚙️ Manage Settings\n"
     "└ 🔗 Share Referral Links\n\n"
     "Let's get started!"
 )
@@ -491,125 +577,48 @@ MEMBERSHIP_WELCOME = (
 MEMBERSHIP_REFRESH = "✅ Status refreshed!"
 MEMBERSHIP_CONTINUE = "🎉 Welcome to Ardayda Bot!"
 
-# ==================== MEMBERSHIP BUTTON TEXTS ====================
+# ==================== EMPTY STATES ====================
 
-BUTTON_REFRESH_MEMBERSHIP = "🔄 Refresh Status"
-BUTTON_CONTINUE_MEMBERSHIP = "🎉 Continue to Main Menu"
-BUTTON_CONFIRM_WHATSAPP = "✅ Confirm {name}"
-BUTTON_JOIN_TELEGRAM = "📢 Join {name}"
-BUTTON_JOIN_WHATSAPP = "💬 Join {name}"
+EMPTY_UPLOADS = "📭 **No Uploads Found**\n\nThis user hasn't uploaded any PDFs yet."
+EMPTY_DOWNLOADS = "📭 **No Downloads Found**\n\nThis user hasn't downloaded any PDFs yet."
+EMPTY_REQUIREMENTS = "📭 **No Requirements Found**\n\nNo membership requirements have been set up."
+EMPTY_REPORTS = "📭 **No Reports Found**\n\nThere are no pending reports."
+EMPTY_PDFS = "📭 **No PDFs Found**\n\nNo PDFs match your search criteria."
+EMPTY_BROWSING = "📭 **No PDFs Available**\n\nThere are no approved PDFs in the system yet."
 
-# ==================== ADMIN MEMBERSHIP TEXTS ====================
+# ==================== GENERAL ====================
 
-ADMIN_MEMBERSHIP_STATS_TITLE = "📊 **MEMBERSHIP STATISTICS**"
-ADMIN_MEMBERSHIP_BREAKDOWN = "**REQUIREMENTS BREAKDOWN**"
-ADMIN_MEMBERSHIP_OVERALL = "**OVERALL COMPLETION**"
-ADMIN_MEMBERSHIP_TELEGRAM_ALL = "├ Telegram All Joined: `{joined}/{total}` ({percent}%)"
-ADMIN_MEMBERSHIP_WHATSAPP_ALL = "└ WhatsApp Confirmed: `{confirmed}/{total}` ({percent}%)"
+HOME_WELCOME = (
+    "🏠 **Main Menu**\n\n"
+    "Welcome back, **{name}!**\n\n"
+    "What would you like to do today?"
+)
 
-ADMIN_MEMBERSHIP_EVENTS_TITLE = "📋 **MEMBERSHIP EVENTS**"
-ADMIN_MEMBERSHIP_EVENT_ITEM = "{icon} **{event_type}**\n├ 👤 User: `{user_name}`\n├ 📢 Requirement: `{req_name}`\n└ 📅 Time: `{date}`"
+CANCELLED = (
+    "❌ **Cancelled**\n\n"
+    "Returning to main menu..."
+)
 
-ADMIN_MEMBERSHIP_ANALYTICS_TITLE = "📈 **MEMBERSHIP ANALYTICS**"
-ADMIN_MEMBERSHIP_COMPLETION_RATE = "**COMPLETION RATE**\n└ `{bar}` {percent}%"
-ADMIN_MEMBERSHIP_DISTRIBUTION = "**DISTRIBUTION**\n├ ✅ Fully Completed: `{completed}` users\n└ ⏳ Partial/None: `{partial}` users"
-ADMIN_MEMBERSHIP_ACTIVITY = "**RECENT ACTIVITY (Last 7 days)**"
+SESSION_EXPIRED = (
+    "⏰ **Session Expired**\n\n"
+    "Please start over from the main menu."
+)
 
-ADMIN_CONFIRM_WHATSAPP_SUCCESS = "✅ WhatsApp confirmed for user {user_id}!"
+UNKNOWN_INPUT = (
+    "ℹ️ **Please use the buttons provided**\n\n"
+    "If you need help, press the ❓ Help button."
+)
 
-# ==================== MEMBERSHIP ADMIN BUTTONS ====================
+NOT_REGISTERED = (
+    "❌ **Not Registered**\n\n"
+    "Please type /start to register first."
+)
 
-BUTTON_ADMIN_MEMBERSHIP_STATS = "📊 Membership Stats"
-BUTTON_ADMIN_MEMBERSHIP_EVENTS = "📋 Membership Events"
-BUTTON_ADMIN_MEMBERSHIP_ANALYTICS = "📈 Member Analytics"
-BUTTON_ADMIN_MEMBERSHIP_LIST = "📋 List All"
-BUTTON_ADMIN_MEMBERSHIP_ADD = "➕ Add New"
-BUTTON_ADMIN_MEMBERSHIP_EDIT = "✏️ Edit"
-BUTTON_ADMIN_MEMBERSHIP_DELETE = "🗑️ Delete"
-BUTTON_ADMIN_MEMBERSHIP_TOGGLE = "🔄 Toggle Status"
-
-# ==================== WHATSAPP CONFIRMATION TEXTS ====================
-
-WHATSAPP_CONFIRM_SUCCESS = "✅ WhatsApp confirmed! Join remaining channels to continue."
-WHATSAPP_CONFIRM_ALL_COMPLETE = "✅ All requirements completed! Click Continue to proceed."
-WHATSAPP_CONFIRM_ALREADY = "✅ You've already confirmed this WhatsApp group."
-
-# ==================== REFRESH TEXTS ====================
-
-REFRESH_MEMBERSHIP_SUCCESS = "✅ Membership status refreshed!"
-REFRESH_MEMBERSHIP_FAILED = "❌ Could not refresh. Please try again."
-
-# ==================== ERRORS ====================
+ACCOUNT_SUSPENDED = (
+    "🚫 **Account Suspended**\n\n"
+    "Your account has been suspended. Please contact an admin."
+)
 
 ERROR_NOT_FOUND = "❌ **Not Found**"
 ERROR_PERMISSION = "❌ **Permission Denied** You don't have access to this."
 ERROR_GENERIC = "❌ **Error** Please try again later."
-
-# ==================== ADDITIONAL MEMBERSHIP TEXTS ====================
-
-MEMBERSHIP_NEXT_REQUIREMENT = (
-    "**Next Requirement:** {icon} **{name}**\n"
-    "🔗 **Link:** `{link}`\n"
-    "📝 **About:** {description}\n"
-)
-
-WHATSAPP_GROUP_HELP = (
-    "💡 **Why join?** This WhatsApp group is where we share updates, study tips, and connect with fellow students.\n"
-    "📞 **Admin Contact:** `{admin_whatsapp}` if you have issues joining.\n"
-)
-
-TELEGRAM_CHANNEL_HELP = (
-    "💡 **Why join?** This channel shares educational resources and important announcements.\n"
-)
-
-WHATSAPP_LINK_CONTEXT = (
-    "📝 **About this group:** {description}\n"
-)
-
-# ==================== BANNED USER TEXT ====================
-
-ACCOUNT_SUSPENDED_WITH_CONTACT = (
-    "🚫 **Account Suspended**\n\n"
-    "Your account has been suspended. Please contact the admin to resolve this issue.\n\n"
-    "📞 **Admin WhatsApp:** `{admin_whatsapp}`\n\n"
-    "Click the button below to message the admin."
-)
-
-# ==================== PDF APPROVAL TEXTS ====================
-
-PDF_APPROVED_NOTIFICATION = (
-    "✅ **Your PDF has been approved!**\n\n"
-    "📄 **File:** `{file_name}`\n"
-    "🆔 **ID:** `{pdf_id}`\n\n"
-    "It is now available for all users to search and download."
-)
-
-PDF_APPROVE_BUTTON = "✅ Approve PDF"
-PDF_APPROVED_SUCCESS = "✅ PDF approved and now public!"
-
-# ==================== SHARE WITH REFERRAL TEXTS ====================
-
-SHARE_PDF_WITH_REFERRAL = (
-    "🔗 **Share this PDF**\n\n"
-    "📄 **File:** `{pdf_id}`\n\n"
-    "Share this link with your friends:\n\n"
-    "`{share_link}`\n\n"
-    "When they register using this link, you'll get referral credit! 🎉"
-)
-
-# ==================== WHATSAPP REQUIREMENT ADD TEXTS ====================
-
-WHATSAPP_ADD_DESCRIPTION_PROMPT = (
-    "💡 **Tip:** Add a description to help users understand the purpose of this WhatsApp group.\n\n"
-    "📝 **Example:** 'This group is for sharing study tips and updates. Admin: @username'\n\n"
-    "Type `skip` to skip or **Cancel** to cancel."
-)
-
-WHATSAPP_DESCRIPTION_EXAMPLE = (
-    "This WhatsApp group is for students to share study resources, ask questions, and stay updated on new PDFs."
-)
-
-# ==================== ADMIN SETTINGS TEXTS ====================
-
-SETTING_TOGGLED = "✅ {setting_name} turned {status}"
-SETTING_UPDATED = "✅ {setting_name} set to {value}"

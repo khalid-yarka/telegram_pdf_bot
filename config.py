@@ -17,47 +17,67 @@ DATABASE_PATH = os.path.join(os.path.dirname(__file__), "instance", "bot.db")
 # No file size limit - set to None or very large
 MAX_FILE_SIZE = None
 
-# Complete Tags definitions
+# ==================== TAG SYSTEM ====================
+# Complete Tags definitions - Clean and organized
+
 TAGS = [
-    "Q/A",
     "Book",
-    "Assignment",
-    "W_Exam",
-    "T1_Exam", 
-    "T2_Exam",
-    "E_Answered",
-    "C_Answered",
-    "A_Answered",
-    "Exam",
+    "Exam/Assignment",
+    "Question/Answer",
+    "Chapters",
     "Notes",
     "Summary",
-    "Chapter Reviews"
+    "Chapter Reviews",
+    "Centerlized",
+    "Unclassified"
 ]
 
-# Tags that require a year selection
-TAGS_REQUIRING_YEAR = ["C_Answered"]
+# Tags that require a year selection (only Centerlized)
+TAGS_REQUIRING_YEAR = ["Centerlized"]
 
 # Years for centralized exams (2010–2025)
 YEARS = [str(y) for y in range(2010, 2026)]
 
-# Class options
-CLASSES = ["Form 3", "Form 4"]
+# ==================== CLASS SYSTEM ====================
+# Class options for PDFs and user registration
 
-# Flask webhook settings
+CLASSES = ["Form 3", "Form 4", "Both", "Unclassified"]
+
+# ==================== SUBJECTS ====================
+# Subjects for Regular/Unclassified materials
+
+SUBJECTS = [
+    "Math",
+    "Physics",
+    "Chemistry",
+    "Biology",
+    "ICT",
+    "Arabic",
+    "Islamic",
+    "English",
+    "Somali",
+    "G.P",
+    "Geography",
+    "History",
+    "Agriculture",
+    "Business"
+]
+
+# ==================== FLASK WEBHOOK SETTINGS ====================
 WEBHOOK_URL = "https://Zabots1.pythonanywhere.com/" + TOKEN
 FLASK_PORT = 5000
 
-# Referral link base
+# ==================== BOT USERNAME ====================
 BOT_USERNAME = "Ardayda_bot"
 
-# Reporting settings
+# ==================== REPORTING SETTINGS ====================
 REPORT_NOTIFY_UPLOADER = True
 REPORT_NOTIFY_ADMINS = True
 
-# Legacy channel (for backward compatibility)
+# ==================== LEGACY (for backward compatibility) ====================
 REQUIRED_CHANNEL = "Ardayda_channel"
 
-# Debug mode
+# ==================== DEBUG MODE ====================
 DEBUG = True
 
 # ==================== DEFAULT SETTINGS ====================
@@ -76,4 +96,9 @@ DEFAULT_SETTINGS = {
     'welcome_message_enabled': '1',
     'channel_leave_alert': '1',
     'allow_user_delete_pdf': '0',
+    # New settings
+    'notify_users_new_pdfs': '1',
+    'pens_per_referral': '1',
+    'pdfs_per_pen': '15',
+    'enable_browsing': '1'
 }

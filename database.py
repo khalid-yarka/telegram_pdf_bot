@@ -1,11 +1,12 @@
 # telegram_pdf_bot/database.py
 # SQLite3 database operations with timezone support (Somalia)
+# Updated with clean tag system (Unclassified only)
 
 import sqlite3
 import json
 import os
 from contextlib import contextmanager
-from config import DATABASE_PATH, DEBUG, TAGS, DEFAULT_SETTINGS
+from config import DATABASE_PATH, DEBUG, DEFAULT_SETTINGS
 from utils import get_current_time
 
 # Ensure instance directory exists
@@ -28,7 +29,7 @@ def init_db():
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Users table
+        # ==================== USERS TABLE ====================
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
@@ -47,7 +48,7 @@ def init_db():
             )
         ''')
         
-        # Add last_active column if missing (for existing databases)
+        # Add missing columns if needed
         cursor.execute("PRAGMA table_info(users)")
         columns = [col[1] for col in cursor.fetchall()]
         if 'last_active' not in columns:
@@ -55,7 +56,7 @@ def init_db():
         if 'referral_notified' not in columns:
             cursor.execute('ALTER TABLE users ADD COLUMN referral_notified BOOLEAN DEFAULT 0')
         
-        # PDFs table
+        # ==================== PDFS TABLE ====================
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS pdfs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,6 +66,7 @@ def init_db():
                 upload_date TIMESTAMP,
                 subject TEXT,
                 tag TEXT,
+                class TEXT,
                 exam_year INTEGER,
                 download_count INTEGER DEFAULT 0,
                 like_count INTEGER DEFAULT 0,
@@ -74,7 +76,13 @@ def init_db():
             )
         ''')
         
-        # User likes table
+        # Add class column if missing
+        cursor.execute("PRAGMA table_info(pdfs)")
+        pdf_columns = [col[1] for col in cursor.fetchall()]
+        if 'class' not in pdf_columns:
+            cursor.execute('ALTER TABLE pdfs ADD COLUMN class TEXT')
+        
+        # ==================== USER LIKES TABLE ====================
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_likes (
                 user_id INTEGER,
@@ -85,7 +93,7 @@ def init_db():
             )
         ''')
         
-        # Downloads log
+        # ==================== DOWNLOADS LOG TABLE ====================
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS downloads (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,7 +105,7 @@ def init_db():
             )
         ''')
         
-        # User state table
+        # ==================== USER STATE TABLE ====================
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_state (
                 user_id INTEGER PRIMARY KEY,
@@ -108,7 +116,7 @@ def init_db():
             )
         ''')
         
-        # Reports table
+        # ==================== REPORTS TABLE ====================
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS reports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,7 +130,7 @@ def init_db():
             )
         ''')
         
-        # Requirements table
+        # ==================== REQUIREMENTS TABLE ====================
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS requirements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -137,7 +145,7 @@ def init_db():
             )
         ''')
         
-        # WhatsApp verification table
+        # ==================== WHATSAPP VERIFICATIONS TABLE ====================
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS whatsapp_verifications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -150,7 +158,7 @@ def init_db():
             )
         ''')
         
-        # Membership tracking table
+        # ==================== MEMBERSHIPS TABLE ====================
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS memberships (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,7 +173,7 @@ def init_db():
             )
         ''')
         
-        # User membership tracking table
+        # ==================== USER MEMBERSHIP TABLE ====================
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_membership (
                 user_id INTEGER PRIMARY KEY,
@@ -178,7 +186,7 @@ def init_db():
             )
         ''')
         
-        # Membership events log
+        # ==================== MEMBERSHIP EVENTS TABLE ====================
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS membership_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,7 +199,7 @@ def init_db():
             )
         ''')
         
-        # Bot settings table
+        # ==================== BOT SETTINGS TABLE ====================
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS bot_settings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -201,6 +209,54 @@ def init_db():
                 updated_at TIMESTAMP,
                 updated_by INTEGER,
                 FOREIGN KEY (updated_by) REFERENCES users(user_id)
+            )
+        ''')
+        
+        # ==================== USER SETTINGS TABLE ====================
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_settings (
+                user_id INTEGER PRIMARY KEY,
+                new_pdf_notifications BOOLEAN DEFAULT 1,
+                updated_at TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            )
+        ''')
+        
+        # ==================== USER PENS TABLE ====================
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_pens (
+                user_id INTEGER PRIMARY KEY,
+                pens_available INTEGER DEFAULT 0,
+                total_earned INTEGER DEFAULT 0,
+                total_spent INTEGER DEFAULT 0,
+                last_updated TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            )
+        ''')
+        
+        # ==================== BROWSING HISTORY TABLE ====================
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS browsing_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                pdf_id INTEGER,
+                viewed_at TIMESTAMP,
+                pen_spent INTEGER DEFAULT 1,
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+                FOREIGN KEY (pdf_id) REFERENCES pdfs(id) ON DELETE CASCADE
+            )
+        ''')
+        
+        # ==================== BROWSING SESSIONS TABLE ====================
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS browsing_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER UNIQUE,
+                current_pdf_index INTEGER DEFAULT 0,
+                viewed_pdfs TEXT,
+                created_at TIMESTAMP,
+                expires_at TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
             )
         ''')
         
@@ -247,6 +303,18 @@ def add_user(user_id, full_name, phone=None, region=None, school=None, class_nam
             (user_id, full_name, phone, region, school, class, join_date, last_active, is_banned, is_admin, referred_by, referral_notified)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0)
         ''', (user_id, full_name, phone, region, school, class_name, current_time, current_time, referred_by))
+        
+        # Initialize user settings
+        cursor.execute('''
+            INSERT OR IGNORE INTO user_settings (user_id, new_pdf_notifications, updated_at)
+            VALUES (?, 1, ?)
+        ''', (user_id, current_time))
+        
+        # Initialize user pens
+        cursor.execute('''
+            INSERT OR IGNORE INTO user_pens (user_id, pens_available, total_earned, total_spent, last_updated)
+            VALUES (?, 0, 0, 0, ?)
+        ''', (user_id, current_time))
         
         if DEBUG:
             print(f"📝 New user added: {user_id} - {full_name}")
@@ -347,31 +415,20 @@ def get_referrer_notification_status(user_id):
         row = cursor.fetchone()
         return row['referral_notified'] == 1 if row else False
 
-def get_user_activity_stats(user_id):
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT join_date, last_active FROM users WHERE user_id = ?', (user_id,))
-        row = cursor.fetchone()
-        if row:
-            return {
-                'join_date': row['join_date'],
-                'last_active': row['last_active']
-            }
-        return None
-
 # ==================== PDF FUNCTIONS ====================
 
-def add_pdf(file_id, file_name, user_id, subject, tag, exam_year=None):
+def add_pdf(file_id, file_name, user_id, subject, tag, pdf_class, exam_year=None):
+    """Add a new PDF with class information"""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO pdfs 
-            (file_id, file_name, uploaded_by, upload_date, subject, tag, exam_year, source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (file_id, file_name, user_id, get_current_time(), subject, tag, exam_year, 'upload'))
+            (file_id, file_name, uploaded_by, upload_date, subject, tag, class, exam_year, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (file_id, file_name, user_id, get_current_time(), subject, tag, pdf_class, exam_year, 'upload'))
         pdf_id = cursor.lastrowid
         if DEBUG:
-            print(f"📄 PDF added: ID={pdf_id}, Name={file_name}, User={user_id}")
+            print(f"📄 PDF added: ID={pdf_id}, Name={file_name}, User={user_id}, Class={pdf_class}, Tag={tag}")
         return pdf_id
 
 def approve_pdf(pdf_id):
@@ -388,6 +445,7 @@ def delete_pdf(pdf_id):
         cursor.execute('DELETE FROM user_likes WHERE pdf_id = ?', (pdf_id,))
         cursor.execute('DELETE FROM downloads WHERE pdf_id = ?', (pdf_id,))
         cursor.execute('DELETE FROM reports WHERE pdf_id = ?', (pdf_id,))
+        cursor.execute('DELETE FROM browsing_history WHERE pdf_id = ?', (pdf_id,))
         if DEBUG:
             print(f"🗑️ PDF deleted: {pdf_id}")
 
@@ -403,17 +461,22 @@ def get_unapproved_pdfs():
         cursor.execute('SELECT * FROM pdfs WHERE is_approved = 0 ORDER BY upload_date DESC')
         return cursor.fetchall()
 
-def get_pdfs_by_filters(subject=None, tag=None, exam_year=None, uploaded_by=None, approved_only=True, limit=10, offset=0):
+def get_pdfs_by_filters(subject=None, tag=None, pdf_class=None, exam_year=None, uploaded_by=None, approved_only=True, limit=10, offset=0):
+    """Get PDFs with filters including class"""
     with get_db() as conn:
         cursor = conn.cursor()
         query = "SELECT * FROM pdfs WHERE 1=1"
         params = []
+        
         if subject:
             query += " AND subject = ?"
             params.append(subject)
         if tag:
             query += " AND tag = ?"
             params.append(tag)
+        if pdf_class:
+            query += " AND class = ?"
+            params.append(pdf_class)
         if exam_year:
             query += " AND exam_year = ?"
             params.append(exam_year)
@@ -422,22 +485,28 @@ def get_pdfs_by_filters(subject=None, tag=None, exam_year=None, uploaded_by=None
             params.append(uploaded_by)
         if approved_only:
             query += " AND is_approved = 1"
+        
         query += " ORDER BY upload_date DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         cursor.execute(query, params)
         return cursor.fetchall()
 
-def count_pdfs_by_filters(subject=None, tag=None, exam_year=None, uploaded_by=None, approved_only=True):
+def count_pdfs_by_filters(subject=None, tag=None, pdf_class=None, exam_year=None, uploaded_by=None, approved_only=True):
+    """Count PDFs with filters including class"""
     with get_db() as conn:
         cursor = conn.cursor()
         query = "SELECT COUNT(*) FROM pdfs WHERE 1=1"
         params = []
+        
         if subject:
             query += " AND subject = ?"
             params.append(subject)
         if tag:
             query += " AND tag = ?"
             params.append(tag)
+        if pdf_class:
+            query += " AND class = ?"
+            params.append(pdf_class)
         if exam_year:
             query += " AND exam_year = ?"
             params.append(exam_year)
@@ -446,8 +515,27 @@ def count_pdfs_by_filters(subject=None, tag=None, exam_year=None, uploaded_by=No
             params.append(uploaded_by)
         if approved_only:
             query += " AND is_approved = 1"
+        
         cursor.execute(query, params)
         return cursor.fetchone()[0]
+
+def get_random_pdfs(limit=1, exclude_ids=None):
+    """Get random approved PDFs for browsing"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        query = "SELECT * FROM pdfs WHERE is_approved = 1"
+        params = []
+        
+        if exclude_ids and len(exclude_ids) > 0:
+            placeholders = ','.join('?' * len(exclude_ids))
+            query += f" AND id NOT IN ({placeholders})"
+            params.extend(exclude_ids)
+        
+        query += " ORDER BY RANDOM() LIMIT ?"
+        params.append(limit)
+        
+        cursor.execute(query, params)
+        return cursor.fetchall()
 
 def increment_download(pdf_id, user_id):
     with get_db() as conn:
@@ -789,6 +877,207 @@ def get_all_settings():
         cursor.execute('SELECT * FROM bot_settings ORDER BY setting_key')
         return cursor.fetchall()
 
+# ==================== USER SETTINGS FUNCTIONS ====================
+
+def get_user_setting(user_id, setting_key, default=True):
+    """Get a user's setting value"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        if setting_key == 'new_pdf_notifications':
+            cursor.execute('SELECT new_pdf_notifications FROM user_settings WHERE user_id = ?', (user_id,))
+            row = cursor.fetchone()
+            if row:
+                return row['new_pdf_notifications'] == 1
+            return default
+        
+        return default
+
+def set_user_setting(user_id, setting_key, value):
+    """Set a user's setting value"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        if setting_key == 'new_pdf_notifications':
+            cursor.execute('''
+                INSERT OR REPLACE INTO user_settings (user_id, new_pdf_notifications, updated_at)
+                VALUES (?, ?, ?)
+            ''', (user_id, 1 if value else 0, get_current_time()))
+            return True
+        
+        return False
+
+def get_all_users_with_notifications_enabled():
+    """Get all users who have notifications enabled"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT u.user_id, u.full_name
+            FROM users u
+            JOIN user_settings us ON u.user_id = us.user_id
+            WHERE u.is_banned = 0 AND us.new_pdf_notifications = 1
+        ''')
+        return cursor.fetchall()
+
+# ==================== PENS FUNCTIONS ====================
+
+def add_pen_to_user(user_id, pens=1):
+    """Add pens to a user (when they get a referral)"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM user_pens WHERE user_id = ?', (user_id,))
+        existing = cursor.fetchone()
+        
+        if existing:
+            new_pens = existing['pens_available'] + pens
+            new_earned = existing['total_earned'] + pens
+            cursor.execute('''
+                UPDATE user_pens 
+                SET pens_available = ?, total_earned = ?, last_updated = ?
+                WHERE user_id = ?
+            ''', (new_pens, new_earned, get_current_time(), user_id))
+        else:
+            cursor.execute('''
+                INSERT INTO user_pens (user_id, pens_available, total_earned, total_spent, last_updated)
+                VALUES (?, ?, ?, 0, ?)
+            ''', (user_id, pens, pens, get_current_time()))
+        
+        if DEBUG:
+            print(f"💰 Added {pens} pen(s) to user {user_id}")
+        return True
+
+def get_user_pens(user_id):
+    """Get available pens for a user"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT pens_available FROM user_pens WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
+        return row['pens_available'] if row else 0
+
+def deduct_pen(user_id, pens=1):
+    """Deduct pens when user browses a PDF"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT pens_available FROM user_pens WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
+        
+        if not row or row['pens_available'] < pens:
+            return False
+        
+        new_pens = row['pens_available'] - pens
+        cursor.execute('SELECT total_spent FROM user_pens WHERE user_id = ?', (user_id,))
+        spent_row = cursor.fetchone()
+        new_spent = (spent_row['total_spent'] if spent_row else 0) + pens
+        
+        cursor.execute('''
+            UPDATE user_pens 
+            SET pens_available = ?, total_spent = ?, last_updated = ?
+            WHERE user_id = ?
+        ''', (new_pens, new_spent, get_current_time(), user_id))
+        
+        if DEBUG:
+            print(f"💰 Deducted {pens} pen(s) from user {user_id}, remaining: {new_pens}")
+        return True
+
+def get_pen_stats(user_id):
+    """Get pen statistics for a user"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT pens_available, total_earned, total_spent FROM user_pens WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
+        if row:
+            return {
+                'available': row['pens_available'],
+                'earned': row['total_earned'],
+                'spent': row['total_spent']
+            }
+        return {'available': 0, 'earned': 0, 'spent': 0}
+
+# ==================== BROWSING FUNCTIONS ====================
+
+def create_browsing_session(user_id, viewed_pdfs=None):
+    """Create a new browsing session"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Delete old session
+        cursor.execute('DELETE FROM browsing_sessions WHERE user_id = ?', (user_id,))
+        
+        # Create new session with 1 hour expiry
+        from datetime import timedelta
+        expires_at = get_current_time() + timedelta(hours=1)
+        
+        cursor.execute('''
+            INSERT INTO browsing_sessions (user_id, current_pdf_index, viewed_pdfs, created_at, expires_at)
+            VALUES (?, 0, ?, ?, ?)
+        ''', (user_id, json.dumps(viewed_pdfs or []), get_current_time(), expires_at))
+        
+        return True
+
+def get_browsing_session(user_id):
+    """Get current browsing session"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM browsing_sessions WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
+        if row:
+            # Check if expired
+            from datetime import datetime
+            expires_at = datetime.fromisoformat(row['expires_at']) if isinstance(row['expires_at'], str) else row['expires_at']
+            if expires_at < get_current_time():
+                cursor.execute('DELETE FROM browsing_sessions WHERE user_id = ?', (user_id,))
+                return None
+            
+            return {
+                'id': row['id'],
+                'current_pdf_index': row['current_pdf_index'],
+                'viewed_pdfs': json.loads(row['viewed_pdfs']) if row['viewed_pdfs'] else [],
+                'created_at': row['created_at'],
+                'expires_at': row['expires_at']
+            }
+        return None
+
+def update_browsing_session(user_id, current_index, viewed_pdfs):
+    """Update browsing session"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE browsing_sessions 
+            SET current_pdf_index = ?, viewed_pdfs = ?
+            WHERE user_id = ?
+        ''', (current_index, json.dumps(viewed_pdfs), user_id))
+
+def delete_browsing_session(user_id):
+    """Delete browsing session"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM browsing_sessions WHERE user_id = ?', (user_id,))
+
+def add_browsing_history(user_id, pdf_id, pen_spent=1):
+    """Record a PDF view in browsing history"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO browsing_history (user_id, pdf_id, viewed_at, pen_spent)
+            VALUES (?, ?, ?, ?)
+        ''', (user_id, pdf_id, get_current_time(), pen_spent))
+
+def get_browsing_history(user_id, limit=50):
+    """Get browsing history for a user"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT bh.*, p.file_name, p.subject, p.tag, p.class
+            FROM browsing_history bh
+            JOIN pdfs p ON bh.pdf_id = p.id
+            WHERE bh.user_id = ?
+            ORDER BY bh.viewed_at DESC
+            LIMIT ?
+        ''', (user_id, limit))
+        return cursor.fetchall()
+
 # ==================== SQL EXECUTION ====================
 
 def execute_sql(sql):
@@ -796,7 +1085,6 @@ def execute_sql(sql):
     with get_db() as conn:
         cursor = conn.cursor()
         try:
-            # Only allow SELECT, UPDATE, INSERT, DELETE (no DROP, ALTER, etc)
             sql_upper = sql.strip().upper()
             allowed_commands = ['SELECT', 'UPDATE', 'INSERT', 'DELETE']
             if not any(sql_upper.startswith(cmd) for cmd in allowed_commands):
